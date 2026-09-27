@@ -6,3 +6,5 @@ parity/fixtures/
 DerivedData/
 *.png
 .DS_Store
+.superpowers/
+sam3.1-bf16
