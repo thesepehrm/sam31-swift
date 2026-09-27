@@ -7,7 +7,8 @@ import Foundation
 /// where it stopped on the next call. Cancelling the calling task stops the transfer.
 ///
 /// The request carries `Authorization: Bearer <token>` only when the `HF_TOKEN` environment variable is
-/// set. The default repository is public and needs no token.
+/// set, and only to `huggingface.co`: the header is dropped when the Hub redirects to a CDN. The
+/// default repository is public and needs no token.
 ///
 /// The weights are released by Meta under the SAM License; downloading them means accepting it.
 public struct WeightDownloader: Sendable {
@@ -135,21 +136,28 @@ public struct WeightDownloader: Sendable {
         return request
     }
 
+    /// The request to follow a redirect with. The Hub redirects file downloads to a CDN on another
+    /// host; the bearer token must not travel there, so `Authorization` is kept only for
+    /// `huggingface.co`.
+    static func redirectRequest(_ request: URLRequest) -> URLRequest {
+        guard request.url?.host?.lowercased() != hub.host else { return request }
+        var request = request
+        request.setValue(nil, forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     // MARK: - Network
 
-    /// The file size the Hub reports: `X-Linked-Size` for LFS files, else the final `Content-Length`.
+    /// The file size the Hub reports: the `Content-Length` of the final (redirected) response.
     private func remoteSize(of file: String, environment: [String: String]) async throws -> Int64? {
         let request = request(for: file, method: "HEAD", environment: environment)
         let response: URLResponse
         do {
-            (_, response) = try await session.data(for: request)
+            (_, response) = try await session.data(for: request, delegate: RedirectGuard())
         } catch {
             throw Self.networkError(error, file: file)
         }
         let http = try Self.checked(response, file: file, allowed: [200])
-        if let linked = http.value(forHTTPHeaderField: "X-Linked-Size"), let size = Int64(linked) {
-            return size
-        }
         return http.expectedContentLength >= 0 ? http.expectedContentLength : nil
     }
 
@@ -271,6 +279,13 @@ private final class PartialFileWriter: NSObject, URLSessionDataDelegate, @unchec
         }
     }
 
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(WeightDownloader.redirectRequest(request))
+    }
+
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         do {
             try handle.write(contentsOf: data)
@@ -306,6 +321,16 @@ private final class PartialFileWriter: NSObject, URLSessionDataDelegate, @unchec
         lock.lock()
         if failure == nil { failure = error }
         lock.unlock()
+    }
+}
+
+/// Task delegate for the `HEAD` size request: strips the token from off-Hub redirects.
+private final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(WeightDownloader.redirectRequest(request))
     }
 }
 

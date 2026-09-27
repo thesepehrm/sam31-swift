@@ -68,4 +68,26 @@ import Testing
         try Data(repeating: 7, count: 123).write(to: file)
         #expect(WeightDownloader.fileSize(at: file) == 123)
     }
+
+    @Test func redirectKeepsTokenOnlyForTheHub() {
+        func request(_ url: String) -> URLRequest {
+            var r = URLRequest(url: URL(string: url)!)
+            r.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+            r.setValue("bytes=10-", forHTTPHeaderField: "Range")
+            return r
+        }
+        let hub = WeightDownloader.redirectRequest(
+            request("https://huggingface.co/api/resolve-cache/models/x/y/config.json"))
+        #expect(hub.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+
+        for url in [
+            "https://cas-bridge.xethub.hf.co/file", "https://cdn-lfs.huggingface.co/file",
+            "https://huggingface.co.evil.com/file",
+        ] {
+            let cdn = WeightDownloader.redirectRequest(request(url))
+            #expect(cdn.value(forHTTPHeaderField: "Authorization") == nil, "\(url)")
+            #expect(cdn.value(forHTTPHeaderField: "Range") == "bytes=10-")
+            #expect(cdn.url == URL(string: url))
+        }
+    }
 }
