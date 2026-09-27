@@ -1,5 +1,5 @@
 // Port of mlx_vlm/models/sam3/position.py::{PositionEmbeddingSine, compute_axial_cis, rotate_pairwise,
-// apply_rotary_enc, init_2d_freqs} (mlx-vlm 0.7.3)
+// apply_rotary_enc, apply_rotary_enc_1d, init_2d_freqs} (mlx-vlm 0.7.3)
 //
 // Python keeps RoPE as real (cos, sin) arrays rather than complex numbers; so does this port.
 import Foundation
@@ -111,6 +111,51 @@ func rotatePairwise(_ x: MLXArray) -> MLXArray {
 func applyRotaryEnc(_ xq: MLXArray, _ xk: MLXArray, cos: MLXArray, sin: MLXArray) -> (MLXArray, MLXArray) {
     let xqOut = xq * cos + rotatePairwise(xq) * sin
     let xkOut = xk * cos + rotatePairwise(xk) * sin
+    return (xqOut, xkOut)
+}
+
+/// Applies RoPE to `(B, N, H, D)` queries and keys for the tracker's memory attention
+/// (`apply_rotary_enc_1d`). Even/odd channels form the real/imaginary pairs.
+///
+/// - Parameters:
+///   - xq: `(B, N_q, H, D)` queries.
+///   - xk: `(B, N_k, H, D)` keys.
+///   - freqsCos: `(N, D/2)` cosine frequencies.
+///   - freqsSin: `(N, D/2)` sine frequencies.
+///   - repeatFreqsK: tile the frequencies to cover `N_k` keys.
+func applyRotaryEnc1D(
+    _ xq: MLXArray, _ xk: MLXArray, freqsCos: MLXArray, freqsSin: MLXArray, repeatFreqsK: Bool = false
+) -> (MLXArray, MLXArray) {
+    let nQ = xq.dim(1)
+    let cosQ = freqsCos[.newAxis, ..<nQ, .newAxis, 0...]
+    let sinQ = freqsSin[.newAxis, ..<nQ, .newAxis, 0...]
+
+    let nK = xk.dim(1)
+    let cosK: MLXArray
+    let sinK: MLXArray
+    if repeatFreqsK {
+        let nF = freqsCos.dim(0)
+        let repeats = (nK + nF - 1) / nF
+        cosK = tiled(freqsCos, repetitions: [repeats, 1])[.newAxis, ..<nK, .newAxis, 0...]
+        sinK = tiled(freqsSin, repetitions: [repeats, 1])[.newAxis, ..<nK, .newAxis, 0...]
+    } else {
+        cosK = freqsCos[.newAxis, ..<nK, .newAxis, 0...]
+        sinK = freqsSin[.newAxis, ..<nK, .newAxis, 0...]
+    }
+
+    let xqR = xq[.ellipsis, .stride(from: 0, by: 2)]
+    let xqI = xq[.ellipsis, .stride(from: 1, by: 2)]
+    let xkR = xk[.ellipsis, .stride(from: 0, by: 2)]
+    let xkI = xk[.ellipsis, .stride(from: 1, by: 2)]
+
+    let xqOutR = xqR * cosQ - xqI * sinQ
+    let xqOutI = xqR * sinQ + xqI * cosQ
+    let xkOutR = xkR * cosK - xkI * sinK
+    let xkOutI = xkR * sinK + xkI * cosK
+
+    // Interleave back.
+    let xqOut = stacked([xqOutR, xqOutI], axis: -1).reshaped(xq.shape)
+    let xkOut = stacked([xkOutR, xkOutI], axis: -1).reshaped(xk.shape)
     return (xqOut, xkOut)
 }
 

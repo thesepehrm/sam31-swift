@@ -29,4 +29,23 @@ struct PositionTests {
         let row = cis.cos[5].asArray(Float.self)
         #expect(zip(row, expected).allSatisfy { abs($0 - $1) < 1e-6 })
     }
+
+    @Test func rotaryEnc1DRotatesPairsAndTilesKeys() {
+        // One head, D = 4 -> two (real, imag) pairs; frequencies for 2 positions.
+        let angles: [Float] = [0.5, 1.0, 2.0, 0.25]  // (N_f=2, D/2=2)
+        let freqs = MLXArray(angles).reshaped(2, 2)
+        let (fc, fs) = (MLX.cos(freqs), MLX.sin(freqs))
+        let x = MLXArray([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1] as [Float]).reshaped(1, 3, 1, 4)
+        let (q, k) = applyRotaryEnc1D(x[0..., ..<2], x, freqsCos: fc, freqsSin: fs, repeatFreqsK: true)
+        // (1, 0) rotates to (cos a, sin a); (0, 1) rotates to (-sin a, cos a).
+        func rotated(_ a: [Float]) -> [Float] {
+            [Foundation.cos(a[0]), Foundation.sin(a[0]), -Foundation.sin(a[1]), Foundation.cos(a[1])]
+        }
+        let expectedQ = rotated([0.5, 1.0]) + rotated([2.0, 0.25])
+        // Key position 2 wraps to frequency row 0.
+        let expectedK = expectedQ + rotated([0.5, 1.0])
+        #expect(zip(q.asArray(Float.self), expectedQ).allSatisfy { abs($0 - $1) < 1e-6 })
+        #expect(zip(k.asArray(Float.self), expectedK).allSatisfy { abs($0 - $1) < 1e-6 })
+        #expect(k.shape == [1, 3, 1, 4])
+    }
 }
