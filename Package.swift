@@ -21,7 +21,10 @@ let package = Package(
             ],
             resources: [.copy("Text/Resources")]
         ),
-        .executableTarget(name: "sam31-cli", dependencies: ["SAM31"]),
+        .executableTarget(
+            name: "sam31-cli",
+            dependencies: ["SAM31", .product(name: "MLX", package: "mlx-swift")]
+        ),
         .testTarget(
             name: "SAM31Tests",
             dependencies: ["SAM31"],
