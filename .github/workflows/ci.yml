@@ -1,0 +1,15 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app || true
+      - name: Lint
+        run: swift format lint --recursive --strict Sources Tests
+      - name: Build CLI
+        run: swift build -c release --product sam31-cli
+      - name: Unit tests (parity tests self-disable without weights)
+        run: xcodebuild test -scheme sam31-swift-Package -destination 'platform=macOS' -derivedDataPath .build/xcode -quiet
