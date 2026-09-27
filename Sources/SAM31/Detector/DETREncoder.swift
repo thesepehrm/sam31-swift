@@ -2,7 +2,6 @@
 // (mlx-vlm 0.7.3)
 import Foundation
 import MLX
-import MLXFast
 import MLXNN
 
 /// Multi-head attention with separate q/k/v/o projections. Shared by the DETR encoder and decoder,
@@ -36,8 +35,8 @@ final class MultiheadAttention: Module {
         let q = qProj(query).reshaped(B, Nq, numHeads, headDim).transposed(0, 2, 1, 3)
         let k = kProj(key).reshaped(B, nk, numHeads, headDim).transposed(0, 2, 1, 3)
         let v = vProj(value).reshaped(B, nk, numHeads, headDim).transposed(0, 2, 1, 3)
-        let out = MLXFast.scaledDotProductAttention(
-            queries: q, keys: k, values: v, scale: scale, mask: mask)
+        // Python calls mx.fast.scaled_dot_product_attention; see `fusedAttention` for the padding.
+        let out = fusedAttention(queries: q, keys: k, values: v, scale: scale, mask: mask)
         return oProj(out.transposed(0, 2, 1, 3).reshaped(B, Nq, -1))
     }
 }
