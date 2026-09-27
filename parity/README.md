@@ -30,6 +30,14 @@ TEST_RUNNER_SAM31_WEIGHTS=$PWD/weights/sam3.1-bf16 TEST_RUNNER_SAM31_FIXTURES=$P
   xcodebuild test -scheme sam31-swift-Package -destination 'platform=macOS' -derivedDataPath .build/xcode -quiet
 ```
 
+## Resize golden
+
+`make_resize_golden.py` writes `Tests/SAM31Tests/Resources/resize-golden.json` (about 7 KB), which is committed because `PreprocessTests` always runs. The script mirrors the tests' 64-bit LCG to generate ten RGB noise images: 37×23, 1920×1080 and 640×360 to 1008², plus small 1×N, N×1, very tall, identity, upscale, non-square downscale and width-only cases. It resizes them with Pillow BILINEAR and stores SHA-256 hashes of the large outputs and base64 bytes of the small ones. Requires `pillow==12.3.0`:
+
+```bash
+.venv/bin/python parity/make_resize_golden.py
+```
+
 ## Fixture keys
 
 Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coordinates are in 1008×1008 model-input space. The video frames are 1920×1080 RGB.

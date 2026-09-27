@@ -1,4 +1,4 @@
 mlx-vlm==0.7.3
 opencv-python-headless
-pillow
+pillow==12.3.0
 numpy

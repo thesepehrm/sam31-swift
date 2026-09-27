@@ -62,33 +62,18 @@ func separableInterpolate(_ x: MLXArray, y ty: ResampleTaps, x tx: ResampleTaps)
     return out!
 }
 
-/// Port of Pillow's `precompute_coeffs` (libImaging/Resample.c) for the BILINEAR filter.
+/// Pillow's BILINEAR coefficients (`PillowCoefficients`) as float32 taps for `separableInterpolate`.
 func pillowBilinearTaps(inSize: Int, outSize: Int) -> ResampleTaps {
-    let scale = Double(inSize) / Double(outSize)
-    let filterScale = max(scale, 1.0)
-    let support = 1.0 * filterScale  // bilinear filter support is 1
-    let kSize = Int(ceil(support)) * 2 + 1
-
-    var indices = [[Int32]](repeating: [Int32](repeating: 0, count: outSize), count: kSize)
-    var weights = [[Float]](repeating: [Float](repeating: 0, count: outSize), count: kSize)
+    let c = PillowCoefficients(bilinearFrom: inSize, to: outSize)
+    var indices = [[Int32]](repeating: [Int32](repeating: 0, count: outSize), count: c.kSize)
+    var weights = [[Float]](repeating: [Float](repeating: 0, count: outSize), count: c.kSize)
     for xx in 0..<outSize {
-        let center = (Double(xx) + 0.5) * scale
-        let ss = 1.0 / filterScale
-        // C `(int)` truncates toward zero; the clamp makes that equal to Pillow's result.
-        let xmin = max(Int(center - support + 0.5), 0)
-        let count = min(Int(center + support + 0.5), inSize) - xmin
-        var k = [Double](repeating: 0, count: count)
-        var ww = 0.0
-        for x in 0..<count {
-            let t = abs((Double(x + xmin) - center + 0.5) * ss)
-            k[x] = t < 1.0 ? 1.0 - t : 0.0
-            ww += k[x]
-        }
+        let (xmin, count) = (c.xmin[xx], c.count[xx])
         for x in 0..<count {
             indices[x][xx] = Int32(x + xmin)
-            weights[x][xx] = Float(ww != 0 ? k[x] / ww : k[x])
+            weights[x][xx] = Float(c.weights[xx * c.kSize + x])
         }
-        for x in count..<kSize {
+        for x in count..<c.kSize {
             indices[x][xx] = Int32(min(xmin, inSize - 1))
         }
     }

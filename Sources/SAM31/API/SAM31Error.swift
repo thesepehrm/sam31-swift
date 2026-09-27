@@ -14,6 +14,8 @@ public enum SAM31Error: Error, Equatable {
     case invalidConfig(String)
     /// A prompt is malformed (for example an empty text prompt or out-of-range point).
     case invalidPrompt(String)
+    /// An input image or pixel buffer cannot be read (for example an unsupported pixel format).
+    case invalidImage(String)
     /// No tracked object has this ID.
     case unknownObject(Int)
     /// Downloading weights failed.

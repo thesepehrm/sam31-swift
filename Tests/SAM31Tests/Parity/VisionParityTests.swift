@@ -1,3 +1,5 @@
+import Foundation
+import ImageIO
 import MLX
 import Testing
 
@@ -44,5 +46,26 @@ import Testing
         }
         let pe = PositionEmbeddingSine(numPosFeats: 128)
         for i in 0..<3 { assertClose(pe(det[i]), fx["neck.det_pos.\(i)"]!, "neck.det_pos.\(i)") }
+    }
+
+    @Test func preprocessMatchesPython() throws {
+        let ix = try Fixtures.load("inputs.safetensors")
+        let px = try Fixtures.load("preprocess.safetensors")
+        let pre = ImagePreprocessor()
+        assertClose(
+            pre.pixelValues(fromRGB: ix["imageA"]!), px["pixel_values_A"]!, rtol: 0, atol: 1e-6, "pv.A")
+        assertClose(
+            pre.pixelValues(fromRGB: ix["imageB"]!), px["pixel_values_B"]!, rtol: 0, atol: 1e-6, "pv.B")
+    }
+
+    /// imageA.png is the untagged PNG that dump.py wrote from the same frame, so decoding it through
+    /// CoreGraphics must reproduce Python's pixel values exactly (no color management on the bytes).
+    @Test func cgImagePreprocessMatchesPython() throws {
+        let url = Fixtures.fixturesURL!.appending(path: "imageA.png")
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let px = try Fixtures.load("preprocess.safetensors")
+        let pv = try ImagePreprocessor().pixelValues(from: image)
+        assertClose(pv, px["pixel_values_A"]!, rtol: 0, atol: 0, "pv.A from CGImage")
     }
 }
