@@ -1,6 +1,7 @@
 # sam31-swift
 
-Meta's SAM 3.1 in pure Swift on Apple silicon. Built on MLX, no Python.
+Meta's SAM 3.1 in pure Swift on Apple silicon. Built on MLX, no Python. I made it for my AI video
+production app, [Cask](https://cask.studio), and figured other Mac apps could use it too.
 
 ```swift
 import SAM31
@@ -238,11 +239,6 @@ The suites skip themselves when the fixtures are missing, so ordinary test runs 
 - **BT.709 for 4:2:0 buffers.** `420f` and `420v` pixel buffers are decoded with the BT.709 matrix,
   whatever their color attachments say.
 - **macOS 14+ on Apple silicon only.** No iOS, no Intel.
-
-## Why it exists
-
-Built for [Cask Studio](https://cask.studio), a macOS editor for AI-generated video, and released so
-any Mac app can use it.
 
 ## Contributing
 
