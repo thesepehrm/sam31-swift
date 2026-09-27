@@ -43,7 +43,7 @@ Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coo
 | `text.safetensors`        | `{person,the_dancer,city_skyline}.{input_ids,attention_mask}` (int64), `.hidden` (text encoder, 1024-d), `.embeds` (projected, 256-d)                                                                                                |
 | `detect.safetensors`      | `detr.enc`, `detr.dec.{hs,ref_boxes,presence}`, `det.scoring`, `det.mask_decoder.{pred_masks,semantic_seg}`, `final.{boxes,scores,masks}` (source-pixel boxes, uint8 masks at 1080×1920), all for "person" on image A, threshold 0.3 |
 | `interactive.safetensors` | for `click1`, `click2` and `box`: `<tag>.out.{pred_masks,pred_masks_high_res,object_score_logits,obj_ptr}`, `<tag>.sam.prompt.{sparse,dense}`, `<tag>.sam.decoder.{masks,iou_pred,sam_tokens_out,object_score_logits}`               |
-| `track.safetensors`       | `mem.encoder.first.{features,pos_enc}`, `add_mask`, `f0.*`, `f1..f9.{masks,object_score_logits}`, `f5.pre_refine.{masks,object_score_logits}`                                                                                        |
+| `track.safetensors`       | `mem.encoder.first.{features,pos_enc}`, `add_mask`, `f0.*`, `f1..f9.{masks,object_score_logits}`, `f5.pre_refine.{masks,object_score_logits}`, `mask_prompt.out.{pred_masks,pred_masks_high_res,object_score_logits,obj_ptr}` (fresh 1-object `track_step` with `add_mask` as the mask prompt) |
 | `manifest.json`           | `mlx_vlm` version, `video`, `prompts`, `add_mask_source`, `hook_calls`, `tokenizer_entries`, `sanity`, `files`                                                                                                                       |
 
 ### Notes on specific keys

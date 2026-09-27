@@ -281,6 +281,13 @@ def main():
         sanity["track"][f"f{i}"] = [round(coverage(m), 4) for m in o["pred_masks_high_res"]]
     mem_calls = len(CAP.get("mem.encoder", []))
     unhook_all()
+    # Mask prompt on a fresh 1-object state (mask-as-output mode): add_mask on frame 0.
+    st3 = trk.init_state(1)
+    o3 = trk.track_step(st3, frame_idx=0, is_init_cond_frame=True, frame_features=ff,
+                        mask_inputs=mx.array(m1)[None, None], num_frames=10)
+    for k in ("pred_masks", "pred_masks_high_res", "object_score_logits", "obj_ptr"):
+        tr[f"mask_prompt.out.{k}"] = o3[k]
+    del st3, o3
     save(out / "track.safetensors", tr, manifest, {"mem.encoder": mem_calls})
 
     manifest["sanity"] = sanity
