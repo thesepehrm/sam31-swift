@@ -82,7 +82,42 @@ import Testing
     /// The tracking scenario of parity/README.md, driven only through `TrackingSession`: obj0 by
     /// click2 on f0, obj1 by mask prompt on f0, propagate f1-f5, refine obj0 on f5, propagate f6-f9.
     @Test func trackingScenarioMatchesPython() async throws {
-        let model = try await SharedModel.get()
+        let rows = try await Self.trackingScenario(await SharedModel.get())
+        for row in rows {
+            for (o, iou) in row.ious.enumerated() {
+                #expect(iou >= 0.99, "\(row.tag) object \(o) IoU \(iou)")
+            }
+            for (o, visible) in row.visible.enumerated() {
+                #expect(visible == row.pyVisible[o], "\(row.tag) object \(o) visibility")
+            }
+        }
+        print("API-TRACKING-REPORT\n" + TrackingRow.report(rows))
+    }
+
+    /// One frame of ``trackingScenario(_:)`` against the Python fixture.
+    struct TrackingRow {
+        let tag: String
+        /// Mask IoU per object at 1008.
+        let ious: [Float]
+        /// Object-score probability per object, Swift and Python.
+        let scores: [Float]
+        let pyScores: [Float]
+        let visible: [Bool]
+        let pyVisible: [Bool]
+
+        static func report(_ rows: [TrackingRow]) -> String {
+            (["frame | IoU per object | |Δ score| max"]
+                + rows.map { r in
+                    let d = zip(r.scores, r.pyScores).map { abs($0 - $1) }.max() ?? 0
+                    return "\(r.tag) | "
+                        + r.ious.map { String(format: "%.5f", $0) }.joined(separator: " | ")
+                        + (r.scores.isEmpty ? " | -" : String(format: " | %.4f", d))
+                }).joined(separator: "\n")
+        }
+    }
+
+    /// Runs the parity/README.md tracking scenario on `model` and compares every frame with Python.
+    static func trackingScenario(_ model: SAM31Model) async throws -> [TrackingRow] {
         let tx = try Fixtures.load("track.safetensors")
         let p = InteractiveParityTests.prompts
         let session = await model.makeTrackingSession()
@@ -99,22 +134,31 @@ import Testing
             frameIndex: 0, features: f0, prompt: .mask(Mask(logits: tx["add_mask"]! * 2 - 1)))
         #expect(await session.objects == [a, b])
 
-        var report = ["frame | obj0 IoU | obj1 IoU"]
+        var rows: [TrackingRow] = []
         func check(_ tag: String, _ frame: TrackedFrame, _ key: String) {
             let py = tx["\(key).masks"]!
-            var row = [tag]
+            let logits = tx["\(key).object_score_logits"]!.asType(.float32)
+            var ious: [Float] = []
+            var scores: [Float] = []
+            var pyScores: [Float] = []
+            var visible: [Bool] = []
+            var pyVisible: [Bool] = []
             for (o, id) in [a, b].enumerated() {
                 guard let obj = frame.objects[id] else {
                     Issue.record("\(tag): object \(o) missing")
                     return
                 }
-                let iou = maskIoU(Self.highRes(obj.mask), py[o])
-                #expect(iou >= 0.99, "\(tag) object \(o) IoU \(iou)")
-                let logit = tx["\(key).object_score_logits"]![o, 0].item(Float.self)
-                #expect(obj.isVisible == (logit > 0), "\(tag) object \(o) visibility")
-                row.append(String(format: "%.5f", iou))
+                ious.append(maskIoU(Self.highRes(obj.mask), py[o]))
+                let logit = logits[o, 0].item(Float.self)
+                scores.append(obj.score)
+                pyScores.append(1 / (1 + exp(-logit)))
+                visible.append(obj.isVisible)
+                pyVisible.append(logit > 0)
             }
-            report.append(row.joined(separator: " | "))
+            rows.append(
+                TrackingRow(
+                    tag: tag, ious: ious, scores: scores, pyScores: pyScores, visible: visible,
+                    pyVisible: pyVisible))
         }
 
         func stream(_ range: Range<Int>) -> AsyncStream<FrameInput> {
@@ -137,13 +181,14 @@ import Testing
         let refined = try await session.refine(
             a, frameIndex: 5, features: f5,
             prompt: .points([.init(x: p["pos"]![0], y: p["pos"]![1] + 20, label: .positive)]))
-        let refineIoU = maskIoU(Self.highRes(refined), tx["f5.masks"]![0])
-        #expect(refineIoU >= 0.99)
-        report.append("f5 refine obj0 | \(String(format: "%.5f", refineIoU)) | -")
+        rows.append(
+            TrackingRow(
+                tag: "f5 refine obj0", ious: [maskIoU(Self.highRes(refined), tx["f5.masks"]![0])], scores: [],
+                pyScores: [], visible: [], pyVisible: []))
         for try await f in session.propagate(stream(6..<10), startingAt: 6, frameCount: 10) {
             check("f\(f.frameIndex)", f, "f\(f.frameIndex)")
         }
-        print("API-TRACKING-REPORT\n" + report.joined(separator: "\n"))
+        return rows
     }
 
     /// Every user-reachable multiplex precondition is an error, not a trap.
