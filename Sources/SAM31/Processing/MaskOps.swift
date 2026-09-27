@@ -1,11 +1,13 @@
-// Port of mlx_vlm/models/sam3/generate.py::_resize_masks and
-// mlx_vlm/models/interpolate.py::{resize_bilinear_nhwc, _bilinear_weights_1d} (mlx-vlm 0.7.3)
+// Port of mlx_vlm/models/sam3/generate.py::_resize_masks,
+// mlx_vlm/models/interpolate.py::{resize_bilinear_nhwc, _bilinear_weights_1d} and
+// mlx_vlm/models/kernels.py::separable_interpolate (mlx-vlm 0.7.3)
 //
-// Both resizes are separable tap tables applied by `separableInterpolate`, which contracts the
-// width taps first and then the height taps. That is the order of mlx-vlm's Metal
-// `separable_interpolate` kernel and of Pillow's horizontal-then-vertical passes.
+// Both resizes are separable tap tables applied by `separableInterpolate`, mlx-vlm's Metal
+// `separable_interpolate` kernel, which contracts the width taps first and then the height taps.
+// That is also the order of Pillow's horizontal-then-vertical passes.
 import Foundation
 import MLX
+import MLXFast
 
 /// Per-axis resampling taps: `indices[t][o]` and `weights[t][o]` are the source index and weight of
 /// tap `t` for output position `o`. Unused taps have weight 0 and an in-range index.
@@ -43,24 +45,64 @@ func resizeBilinearNHWC(
     return separableInterpolate(x, y: ty, x: tx)
 }
 
-/// Applies per-axis taps to `(B, H, W, C)`: width taps first, then height taps, in float32.
+/// Applies per-axis taps to `(B, H, W, C)` in float32: for each output pixel, the width taps of each
+/// source row, then the height taps over those rows.
+///
+/// Runs mlx-vlm's `separable_interpolate` Metal kernel (`models/kernels.py`), one thread per output
+/// element, so no `(B, H, W_out, C)` intermediate is written.
 func separableInterpolate(_ x: MLXArray, y ty: ResampleTaps, x tx: ResampleTaps) -> MLXArray {
-    let x = x.asType(.float32)
-    let outH = ty.indices[0].count
-    let outW = tx.indices[0].count
-
-    var rows: MLXArray? = nil
-    for (idx, wt) in zip(tx.indices, tx.weights) {
-        let term = take(x, MLXArray(idx), axis: 2) * MLXArray(wt).reshaped(1, 1, outW, 1)
-        rows = rows.map { $0 + term } ?? term
+    let (b, c) = (x.dim(0), x.dim(3))
+    let (outH, outW) = (ty.indices[0].count, tx.indices[0].count)
+    // (out, taps) row-major tables, as the kernel indexes them.
+    func table<T: HasDType>(_ rows: [[T]], _ out: Int) -> MLXArray {
+        MLXArray(rows.flatMap { $0 }, [rows.count, out]).transposed().contiguous()
     }
-    var out: MLXArray? = nil
-    for (idx, wt) in zip(ty.indices, ty.weights) {
-        let term = take(rows!, MLXArray(idx), axis: 1) * MLXArray(wt).reshaped(1, outH, 1, 1)
-        out = out.map { $0 + term } ?? term
-    }
-    return out!
+    return separableInterpolateKernel(
+        [
+            x.asType(.float32), table(ty.indices, outH), table(ty.weights, outH), table(tx.indices, outW),
+            table(tx.weights, outW),
+        ],
+        grid: (outW * c, outH, b), threadGroup: (min(256, outW * c), 1, 1),
+        outputShapes: [[b, outH, outW, c]], outputDTypes: [.float32])[0]
 }
+
+/// mlx-vlm 0.7.3 `models/kernels.py::separable_interpolate`, verbatim.
+private let separableInterpolateKernel = MLXFast.metalKernel(
+    name: "separable_interpolate", inputNames: ["x", "iy", "wy", "ix", "wx"], outputNames: ["out"],
+    source: """
+            uint gx = thread_position_in_grid.x;
+            uint y_out = thread_position_in_grid.y;
+            uint b = thread_position_in_grid.z;
+
+            int in_h = x_shape[1];
+            int in_w = x_shape[2];
+            int channels = x_shape[3];
+            int out_h = iy_shape[0];
+            int taps_y = iy_shape[1];
+            int out_w = ix_shape[0];
+            int taps_x = ix_shape[1];
+
+            if (gx >= (uint)(out_w * channels) || y_out >= (uint)out_h)
+                return;
+
+            int x_out = gx / channels;
+            size_t y_tap = (size_t)y_out * taps_y;
+            size_t x_tap = (size_t)x_out * taps_x;
+            size_t input_base = (size_t)b * in_h * in_w * channels + (gx % channels);
+
+            // W taps are contracted inside the H loop to match ATen's summation order
+            float result = 0.0f;
+            for (int a = 0; a < taps_y; a++) {
+                size_t row = input_base + (size_t)iy[y_tap + a] * in_w * channels;
+                float row_result = 0.0f;
+                for (int c = 0; c < taps_x; c++) {
+                    row_result += x[row + (size_t)ix[x_tap + c] * channels] * wx[x_tap + c];
+                }
+                result += row_result * wy[y_tap + a];
+            }
+
+            out[((size_t)b * out_h + y_out) * out_w * channels + gx] = result;
+        """)
 
 /// Pillow's BILINEAR coefficients (`PillowCoefficients`) as float32 taps for `separableInterpolate`.
 func pillowBilinearTaps(inSize: Int, outSize: Int) -> ResampleTaps {
