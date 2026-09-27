@@ -6,14 +6,8 @@ import MLXNN
 
 /// Loads `<directory>/model.safetensors` into `module`.
 ///
-/// Weights are sanitized (see ``sanitize(_:)``), optionally narrowed to one subtree, cast to `dtype`,
-/// and applied with full verification: every parameter of `module` must be set, every tensor must be
-/// consumed, and shapes must match.
-///
-/// - Parameters:
-///   - prefix: when set, only keys starting with `prefix` are kept and the prefix is stripped, so a
-///     subtree such as `"detector_model.vision_encoder.backbone."` loads into a standalone module.
-///   - dtype: floating-point tensors are cast to this type; integer tensors are left unchanged.
+/// Weights are sanitized (see ``sanitize(_:)``) and then applied as in
+/// ``loadWeights(into:weights:dtype:prefix:)``.
 func loadWeights(into module: Module, from directory: URL, dtype: DType, prefix: String?) throws {
     let file = directory.appending(path: "model.safetensors")
     guard FileManager.default.fileExists(atPath: file.path) else {
@@ -27,8 +21,23 @@ func loadWeights(into module: Module, from directory: URL, dtype: DType, prefix:
         throw SAM31Error.invalidConfig("\(file.lastPathComponent): \(error)")
     }
 
+    try loadWeights(into: module, weights: sanitize(raw), dtype: dtype, prefix: prefix)
+}
+
+/// Loads already-sanitized `weights` into `module`.
+///
+/// Weights are optionally narrowed to one subtree, cast to `dtype`, and applied with full
+/// verification: every parameter of `module` must be set, every tensor must be consumed, and shapes
+/// must match.
+///
+/// - Parameters:
+///   - weights: a checkpoint dictionary that has already been through ``sanitize(_:)``.
+///   - prefix: when set, only keys starting with `prefix` are kept and the prefix is stripped, so a
+///     subtree such as `"detector_model.vision_encoder.backbone."` loads into a standalone module.
+///   - dtype: floating-point tensors are cast to this type; integer tensors are left unchanged.
+func loadWeights(into module: Module, weights all: [String: MLXArray], dtype: DType, prefix: String?) throws {
     var weights: [String: MLXArray] = [:]
-    for (key, value) in sanitize(raw) {
+    for (key, value) in all {
         var key = key
         if let prefix {
             guard key.hasPrefix(prefix) else { continue }
