@@ -1,0 +1,8 @@
+.venv/
+weights/
+parity/fixtures/
+.build/
+.swiftpm/
+DerivedData/
+*.png
+.DS_Store
