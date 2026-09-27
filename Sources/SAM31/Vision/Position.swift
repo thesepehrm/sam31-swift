@@ -1,9 +1,60 @@
-// Port of mlx_vlm/models/sam3/position.py::{compute_axial_cis, rotate_pairwise, apply_rotary_enc,
-// init_2d_freqs} (mlx-vlm 0.7.3). PositionEmbeddingSine follows in Task 5.
+// Port of mlx_vlm/models/sam3/position.py::{PositionEmbeddingSine, compute_axial_cis, rotate_pairwise,
+// apply_rotary_enc, init_2d_freqs} (mlx-vlm 0.7.3)
 //
 // Python keeps RoPE as real (cos, sin) arrays rather than complex numbers; so does this port.
 import Foundation
 import MLX
+
+/// Sinusoidal 2D position embedding, used by the DETR encoder/decoder and the memory encoder.
+///
+/// Not a `Module`: it has no parameters. Python does not cache the result, so neither does this port.
+final class PositionEmbeddingSine: Sendable {
+    let numPosFeats: Int
+    let temperature: Float
+    let normalize: Bool
+    let scale: Float
+
+    init(numPosFeats: Int = 256, temperature: Float = 10000, normalize: Bool = true, scale: Float? = nil) {
+        self.numPosFeats = numPosFeats
+        self.temperature = temperature
+        self.normalize = normalize
+        self.scale = scale ?? Float(2 * Double.pi)
+    }
+
+    /// - Parameter x: `(B, H, W, C)` channel-last feature map; only its shape is read.
+    /// - Returns: `(B, H, W, 2*numPosFeats)` position encoding, y features then x features.
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        let (B, H, W) = (x.dim(0), x.dim(1), x.dim(2))
+
+        // 1-indexed positions, matching HF's cumsum over an all-true mask.
+        var yEmbed = broadcast((MLXArray.arange(H) + 1).reshaped(1, H, 1), to: [B, H, W]).asType(.float32)
+        var xEmbed = broadcast((MLXArray.arange(W) + 1).reshaped(1, 1, W), to: [B, H, W]).asType(.float32)
+
+        if normalize {
+            let eps: Float = 1e-6
+            yEmbed = yEmbed / (yEmbed[0..., (-1)..., 0...] + eps) * scale
+            xEmbed = xEmbed / (xEmbed[0..., 0..., (-1)...] + eps) * scale
+        }
+
+        var dimT = MLXArray.arange(numPosFeats).asType(.float32)
+        dimT = pow(temperature, 2 * floorDivide(dimT, 2) / Float(numPosFeats))
+
+        var posX = xEmbed[.ellipsis, .newAxis] / dimT  // (B, H, W, D)
+        var posY = yEmbed[.ellipsis, .newAxis] / dimT  // (B, H, W, D)
+
+        // Interleave sin/cos matching HF: stack([sin(even), cos(odd)]).flatten
+        posX = stacked(
+            [MLX.sin(posX[.ellipsis, .stride(by: 2)]), MLX.cos(posX[.ellipsis, .stride(from: 1, by: 2)])],
+            axis: -1)
+        posX = posX.reshaped(Array(posX.shape.dropLast(2)) + [-1])
+        posY = stacked(
+            [MLX.sin(posY[.ellipsis, .stride(by: 2)]), MLX.cos(posY[.ellipsis, .stride(from: 1, by: 2)])],
+            axis: -1)
+        posY = posY.reshaped(Array(posY.shape.dropLast(2)) + [-1])
+
+        return concatenated([posY, posX], axis: -1)  // (B, H, W, 2*D)
+    }
+}
 
 /// A rotary embedding table as paired real arrays: `cos` and `sin` share one shape.
 struct RotaryCIS {
