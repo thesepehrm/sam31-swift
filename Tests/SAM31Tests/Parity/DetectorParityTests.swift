@@ -31,4 +31,20 @@ import Testing
             into: g, weights: SharedWeights.all, dtype: .float32,
             prefix: "detector_model.geometry_encoder.")
     }
+
+    @Test func detrDecoderMatchesPython() throws {
+        let dec = DETRDecoder(Self.cfg.detrDecoderConfig)
+        try loadWeights(
+            into: dec, weights: SharedWeights.all, dtype: .float32,
+            prefix: "detector_model.detr_decoder.")
+        let (_, pos) = try Self.srcPos()
+        let tx = try Fixtures.load("text.safetensors")
+        let dx = try Fixtures.load("detect.safetensors")
+        let (hs, ref, pres) = dec(
+            visionFeatures: dx["detr.enc"]!, inputsEmbeds: tx["person.embeds"]!,
+            visionPosEncoding: pos, textMask: tx["person.attention_mask"]!, spatialShape: (72, 72))
+        assertClose(hs, dx["detr.dec.hs"]!, "detr.dec.hs")
+        assertClose(ref, dx["detr.dec.ref_boxes"]!, "detr.dec.ref_boxes")
+        assertClose(pres, dx["detr.dec.presence"]!, "detr.dec.presence")
+    }
 }
