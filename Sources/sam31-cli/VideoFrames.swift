@@ -113,11 +113,3 @@ struct FrameList: AsyncSequence, Sendable {
         }
     }
 }
-
-extension SAM31Model {
-    /// Encodes a decoded video frame.
-    func encode(frame input: FrameInput) async throws -> FrameFeatures {
-        guard case .pixelBuffer(let buffer) = input else { throw CLIError("expected a decoded video frame") }
-        return try encode(buffer)
-    }
-}

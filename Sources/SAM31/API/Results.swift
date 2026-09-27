@@ -13,8 +13,29 @@ public struct Mask: Sendable {
     public let width: Int
     /// Height of the logit grid.
     public let height: Int
-    /// Row-major `height × width` logits.
-    let values: [Float]
+    /// Row-major logits at model resolution: `width × height` values, row `y` starting at index
+    /// `y * width`. A logit above 0 means the pixel belongs to the object.
+    public let values: [Float]
+
+    /// Creates a mask from row-major logits, for example to pass as ``TrackPrompt/mask(_:)``.
+    ///
+    /// Logits above 0 mark foreground. A binary mask works too: use a positive value (such as 10)
+    /// for foreground and a negative one (such as -10) for background.
+    ///
+    /// - Throws: ``SAM31Error/invalidPrompt(_:)`` when `width` or `height` is not positive or
+    ///   `logits.count` is not `width * height`.
+    public init(logits: [Float], width: Int, height: Int) throws {
+        guard width > 0, height > 0 else {
+            throw SAM31Error.invalidPrompt("mask size \(width)×\(height) is not positive")
+        }
+        guard width.multipliedReportingOverflow(by: height) == (logits.count, false) else {
+            throw SAM31Error.invalidPrompt(
+                "mask has \(logits.count) logits, expected \(width)×\(height)")
+        }
+        self.width = width
+        self.height = height
+        self.values = logits
+    }
 
     /// Copies `(h, w)` logits to the host (evaluates them).
     init(logits: MLXArray) {

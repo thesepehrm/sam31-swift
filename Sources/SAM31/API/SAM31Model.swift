@@ -107,8 +107,16 @@ public actor SAM31Model {
         return FrameFeatures(backbone: backbone, sourceSize: sourceSize)
     }
 
-    /// Encodes a tracking input, or passes encoded features through.
-    func features(for input: FrameInput) throws -> FrameFeatures {
+    /// Encodes a ``FrameInput``: runs the vision backbone on an image or pixel buffer, or returns
+    /// already-encoded features unchanged.
+    ///
+    /// `CVPixelBuffer` is not `Sendable`, so Swift 6 callers outside the actor cannot pass one to the
+    /// `CVPixelBuffer` overload of `encode` directly. Wrap it as `.pixelBuffer(buffer)` and call this
+    /// instead. The buffer is read while the call is in flight; do not write to it until the call
+    /// returns.
+    ///
+    /// - Throws: ``SAM31Error/invalidImage(_:)`` for an unsupported image or pixel format.
+    public func encode(_ input: FrameInput) throws -> FrameFeatures {
         switch input {
         case .image(let image): try encode(image)
         case .pixelBuffer(let buffer): try encode(buffer)

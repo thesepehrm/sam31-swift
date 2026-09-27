@@ -334,7 +334,7 @@ func runTrack(_ options: Options) async throws {
     guard let input = try await first.next() else {
         throw CLIError("\(url.path) has no frames")
     }
-    let frame0 = try await timed("encode frame 0") { try await model.encode(frame: input) }
+    let frame0 = try await timed("encode frame 0") { try await model.encode(input) }
     let size = frame0.sourceSize
     let points = try modelPoints(rawPoints, mapper: PointMapper(sourceSize: size))
     let session = await model.makeTrackingSession()

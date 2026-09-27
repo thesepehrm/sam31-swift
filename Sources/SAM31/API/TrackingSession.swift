@@ -278,7 +278,7 @@ extension SAM31Model {
         guard let st = s.tracker else {
             throw SAM31Error.invalidPrompt("the session has no objects; add one before propagating")
         }
-        let frame = try features(for: input)
+        let frame = try encode(input)
         let ff = trackerFeatures(frame, interactive: false, propagation: true)
         let out = tracker.propagate(
             st, frameIndex: frameIndex, features: ff, numFrames: numFrames(s, frameIndex))

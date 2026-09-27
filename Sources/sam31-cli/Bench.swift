@@ -43,17 +43,17 @@ func runBench(_ options: Options) async throws {
     // ---- text prompt (detector path) ----
     // Python's predict() preprocesses, runs the backbone, and detects on every call.
     _ = try await timed("text 'person' (cold) [encode+detect]") {
-        try await model.detect(model.encode(frame: frame0), text: "person", scoreThreshold: 0.3)
+        try await model.detect(model.encode(frame0), text: "person", scoreThreshold: 0.3)
     }
     let people = try await timed("text 'person' (warm) [encode+detect]") {
-        try await model.detect(model.encode(frame: frame0), text: "person", scoreThreshold: 0.3)
+        try await model.detect(model.encode(frame0), text: "person", scoreThreshold: 0.3)
     }
     print("  detections: \(people.count) \(round2(people.map(\.score)))")
     if let top = people.first {
         print("  text mask coverage: \(String(format: "%.3f", try save(top.mask, "out-text.png")))")
     }
     let skyline = try await timed("text 'city skyline' (warm backbone? no cache) [encode+detect]") {
-        try await model.detect(model.encode(frame: frame0), text: "city skyline", scoreThreshold: 0.3)
+        try await model.detect(model.encode(frame0), text: "city skyline", scoreThreshold: 0.3)
     }
     print("  detections: \(skyline.count)")
 
@@ -69,7 +69,7 @@ func runBench(_ options: Options) async throws {
     let side = model.configuration.imageSize
     print("  pixel_values [1, \(side), \(side), 3]")
     let features = try await timed("backbone (frame analysis) [+preprocess]") {
-        try await model.encode(frame: frame0)
+        try await model.encode(frame0)
     }
     print("tracker frame features".padding(toLength: 44, withPad: " ", startingAt: 0) + "      n/a")
     print("  fused into click 1-cold (computed on a frame's first prompt)")

@@ -39,4 +39,17 @@ import Testing
             #expect(b.width == 0 && b.bytes.isEmpty && b.coverage == 0 && b.cgImage() == nil)
         }
     }
+
+    @Test func publicInitValidatesAndRoundTripsValues() throws {
+        let logits: [Float] = [-1, 2, 3, -4, 5, -6]
+        let m = try Mask(logits: logits, width: 3, height: 2)
+        #expect(m.width == 3 && m.height == 2)
+        #expect(m.values == logits)
+        #expect(m.logits.shape == [2, 3])
+        #expect(try Mask(logits: m.values, width: m.width, height: m.height).values == logits)
+
+        #expect(throws: SAM31Error.self) { try Mask(logits: logits, width: 2, height: 2) }
+        #expect(throws: SAM31Error.self) { try Mask(logits: [], width: 0, height: 0) }
+        #expect(throws: SAM31Error.self) { try Mask(logits: logits, width: -3, height: -2) }
+    }
 }
