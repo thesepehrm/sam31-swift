@@ -1,9 +1,8 @@
 // Port of mlx_vlm/models/sam3_1/tracker.py::{MultiplexTrackerModel, ObjectPointerMLP, _resize_masks}
 // (mlx-vlm 0.7.3)
 //
-// Task 12 covers the module tree, frame features, the SAM heads, mask-as-output, and track_step for
-// init conditioning frames. The memory side (`_prepare_memory_conditioned_features`,
-// `_encode_new_memory`) and add/recondition land in Task 13.
+// The memory side lives in TrackerModel+Memory.swift and dynamic object management plus the session
+// API in TrackerModel+Objects.swift, following tracker.py's sections.
 import MLX
 import MLXNN
 
@@ -413,24 +412,6 @@ final class MultiplexTrackerModel: Module {
             objectScoreLogits: outScale * isObjAppearing + outBias, objPtr: objPtr)
     }
 
-    // MARK: - Memory conditioning / encoding (Task 13)
-
-    /// Fuses the current `(1, H, W, C)` features with past memories into `(numBuckets, H, W, C)`.
-    func prepareMemoryConditionedFeatures(
-        frameIndex: Int, currentVisionFeat: MLXArray, currentVisionPos: MLXArray,
-        state: MultiplexTrackerState, numFrames: Int, trackInReverse: Bool
-    ) -> MLXArray {
-        fatalError("Task 13")
-    }
-
-    /// Encodes the frame's predictions into `(maskmemFeatures, maskmemPosEnc)`, each `(B, H, W, C)`.
-    func encodeNewMemory(
-        currentVisionFeat: MLXArray, predMasksHighRes: MLXArray, objectScoreLogits: MLXArray,
-        conditioningObjects: Set<Int>, multiplexState: MultiplexState
-    ) -> (features: MLXArray, posEnc: MLXArray) {
-        fatalError("Task 13")
-    }
-
     // MARK: - Track step
 
     /// Whether to use multimask output in the SAM head.
@@ -448,21 +429,37 @@ final class MultiplexTrackerModel: Module {
     /// prompts), interaction-only (points on a conditioning frame, or refinement with
     /// `prevSAMMaskLogits`), and propagation-and-interaction (points on a non-conditioning frame).
     ///
-    /// - Parameter numFrames: total video length (limits the object-pointer range); nil means
-    ///   `frameIndex + 1`.
+    /// - Parameters:
+    ///   - numFrames: total video length (limits the object-pointer range); nil means
+    ///     `frameIndex + 1`.
+    ///   - newObjectMasks: `(K, 1, H_im, W_im)` masks of objects to add on this frame after the step
+    ///     (`newObjectIdxs` must then be given).
     @discardableResult
     func trackStep(
         _ state: MultiplexTrackerState, frameIndex: Int, isInitCondFrame: Bool,
         features: TrackerFrameFeatures,
         pointInputs: PointInputs?, maskInputs: MLXArray?, numFrames: Int?, trackInReverse: Bool = false,
-        runMemEncoder: Bool = true, prevSAMMaskLogits: MLXArray? = nil, objectsToInteract: [Int]? = nil
+        runMemEncoder: Bool = true, prevSAMMaskLogits: MLXArray? = nil, objectsToInteract: [Int]? = nil,
+        newObjectMasks: MLXArray? = nil, newObjectIdxs: [Int]? = nil, newObjectIDs: [Int]? = nil,
+        areNewMasksFromPts: Bool = false
     ) -> FrameOutput {
-        let (currentOut, _) = trackStepAux(
+        let (currentOut, auxOut) = trackStepAux(
             state, frameIndex: frameIndex, isInitCondFrame: isInitCondFrame, features: features,
             pointInputs: pointInputs, maskInputs: maskInputs, numFrames: numFrames ?? frameIndex + 1,
-            trackInReverse: trackInReverse, runMemEncoder: runMemEncoder,
+            trackInReverse: trackInReverse, runMemEncoder: runMemEncoder && newObjectMasks == nil,
             prevSAMMaskLogits: prevSAMMaskLogits,
-            objectsToInteract: objectsToInteract, needAuxOutput: false)
+            objectsToInteract: objectsToInteract, needAuxOutput: newObjectMasks != nil)
+
+        if let newObjectMasks {
+            precondition(newObjectIdxs != nil)
+            let aux = auxOut!
+            addNewMasksToExistingState(
+                interactivePixFeat: aux.interactivePixFeat,
+                interactiveHighResFeatures: aux.interactiveHighResFeatures,
+                propagationVisionFeat: aux.propagationVisionFeat, newMasks: newObjectMasks,
+                objIdxsInMask: newObjectIdxs!, objIDsInMask: newObjectIDs, prevOutput: currentOut,
+                state: state, addMaskToMemory: runMemEncoder, areMasksFromPts: areNewMasksFromPts)
+        }
 
         if isInitCondFrame {
             state.condFrameOutputs[frameIndex] = currentOut
@@ -578,7 +575,9 @@ final class MultiplexTrackerModel: Module {
             }
 
             if let p = propagationOut, let i = interactionOut {
-                // Merge: replace the interacted objects in the propagated output
+                // Merge: replace the interacted objects in the propagated output. MLXArray is a
+                // reference type and subscript assignment mutates the shared array in place, as
+                // Python's `propagation_out[k][objects_to_interact] = ...` does.
                 let idx = Self.indexArray(objectsToInteract!)
                 let merged = p
                 merged.lowResMultimasks[idx] = i.lowResMultimasks
@@ -614,8 +613,10 @@ final class MultiplexTrackerModel: Module {
         }
 
         if config.saveImageFeatures {
-            currentOut.imageFeatures = propagation?.visionFeat
-            currentOut.imagePosEnc = propagation?.visionPos
+            // Python indexes `propagation[...]` here, which raises without propagation features.
+            precondition(propagation != nil, "saveImageFeatures needs propagation features")
+            currentOut.imageFeatures = propagation!.visionFeat
+            currentOut.imagePosEnc = propagation!.visionPos
         }
 
         var aux: TrackStepAuxOutput? = nil
@@ -630,7 +631,7 @@ final class MultiplexTrackerModel: Module {
     }
 
     /// Object indices as an int32 gather index (Python's `x[list]`).
-    private static func indexArray(_ indices: [Int]) -> MLXArray {
+    static func indexArray(_ indices: [Int]) -> MLXArray {
         MLXArray(indices.map(Int32.init))
     }
 }

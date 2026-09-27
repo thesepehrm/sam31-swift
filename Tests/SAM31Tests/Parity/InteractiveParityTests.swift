@@ -96,10 +96,8 @@ import Testing
         }
     }
 
-    /// `track_step` on a fresh 1-object state, init conditioning frame, points only.
-    ///
-    /// `runMemEncoder: false`: the memory encoder's forward pass lands in Task 13. It only adds
-    /// `maskmem_*` to the output and does not affect the tensors asserted here.
+    /// `track_step` on a fresh 1-object state, init conditioning frame, points only (default path,
+    /// memory encoder on, as in dump.py).
     @Test(arguments: ["click1", "click2", "box"])
     func interactiveStepMatchesPython(_ tag: String) throws {
         let (trk, ff) = try Self.trackerAndFeatures()
@@ -110,7 +108,7 @@ import Testing
             st, frameIndex: 0, isInitCondFrame: true, features: ff,
             pointInputs: PointInputs(
                 coords: MLXArray(points).reshaped(1, -1, 2), labels: MLXArray(labels).reshaped(1, -1)),
-            maskInputs: nil, numFrames: 10, runMemEncoder: false)
+            maskInputs: nil, numFrames: 10)
         // The brief allowed atol 1e-3 on pred_masks; the default fp32 tolerance holds (max |Δ| 2.1e-5).
         assertClose(out.predMasks, ix["\(tag).out.pred_masks"]!, "\(tag).pred_masks")
         assertClose(out.predMasksHighRes, ix["\(tag).out.pred_masks_high_res"]!, "\(tag).pred_masks_high_res")
@@ -132,8 +130,7 @@ import Testing
         let st = trk.initState(numObjects: 1, objectIDs: nil)
         let out = trk.trackStep(
             st, frameIndex: 0, isInitCondFrame: true, features: ff, pointInputs: nil,
-            maskInputs: expandedDimensions(tx["add_mask"]!, axes: [0, 1]), numFrames: 10, runMemEncoder: false
-        )
+            maskInputs: expandedDimensions(tx["add_mask"]!, axes: [0, 1]), numFrames: 10)
         assertClose(out.predMasks, tx["mask_prompt.out.pred_masks"]!, "mask_prompt.pred_masks")
         assertClose(out.predMasksHighRes, tx["mask_prompt.out.pred_masks_high_res"]!, "mask_prompt.high_res")
         assertClose(

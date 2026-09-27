@@ -1,8 +1,5 @@
 // Port of mlx_vlm/models/sam3_1/tracker.py::{MultiplexMaskDownSampler, MultiplexMemoryEncoder} and
 // mlx_vlm/models/sam3/tracker.py::{DownsampleConvBlock, CXBlock, MemoryFuser} (mlx-vlm 0.7.3)
-//
-// Task 12 declares the modules and their full weight-key trees so `tracker_model.memory_encoder.*`
-// loads. The forward passes land in Task 13.
 import MLX
 import MLXNN
 
@@ -16,6 +13,14 @@ final class DownsampleConvBlock: Module {
             inputChannels: inChannels, outputChannels: outChannels, kernelSize: .init(kernelSize),
             stride: .init(stride), padding: .init(padding))
         _layerNorm.wrappedValue = LayerNorm2d(outChannels)
+    }
+
+    /// `(B, H, W, C_in)` -> `(B, H', W', C_out)`.
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        var x = conv(x)
+        x = layerNorm(x)
+        x = gelu(x)
+        return x
     }
 }
 
@@ -38,6 +43,21 @@ final class CXBlock: Module {
         _pointwiseConv2.wrappedValue = Linear(config.memoryFuserIntermediateDim, dim)
         _scale.wrappedValue = MLXArray.ones([dim]) * config.memoryFuserLayerScaleInitValue
     }
+
+    /// `(B, H, W, C)` -> `(B, H, W, C)`.
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        let residual = x
+        var x = depthwiseConv(x)
+        x = layerNorm(x)
+        let (b, h, w, c) = (x.dim(0), x.dim(1), x.dim(2), x.dim(3))
+        x = x.reshaped(b * h * w, c)
+        x = pointwiseConv1(x)
+        x = gelu(x)
+        x = pointwiseConv2(x)
+        x = x.reshaped(b, h, w, c)
+        x = scale * x
+        return residual + x
+    }
 }
 
 /// Stack of CXBlocks fusing mask and image features. Weight keys: `memory_fuser.*`.
@@ -46,6 +66,14 @@ final class MemoryFuser: Module {
 
     init(_ config: TrackerConfig) {
         _layers.wrappedValue = (0..<config.memoryFuserNumLayers).map { _ in CXBlock(config) }
+    }
+
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        var x = x
+        for layer in layers {
+            x = layer(x)
+        }
+        return x
     }
 }
 
@@ -70,6 +98,18 @@ final class MultiplexMaskDownSampler: Module {
         _finalConv.wrappedValue = Conv2d(
             inputChannels: channels[channels.count - 1], outputChannels: config.maskDownsamplerEmbedDim,
             kernelSize: .init(1), bias: true)
+    }
+
+    /// - Parameter masks: `(B, H, W, 2 * multiplexCount)` muxed mask channels.
+    func callAsFunction(_ masks: MLXArray) -> MLXArray {
+        var masks = masks
+        if masks.dim(1) != inputSize || masks.dim(2) != inputSize {
+            masks = resizeBilinearNHWC(masks, h: inputSize, w: inputSize)
+        }
+        for layer in layers {
+            masks = layer(masks)
+        }
+        return finalConv(masks)
     }
 }
 
@@ -96,6 +136,8 @@ final class MultiplexMemoryEncoder: Module {
     ///   - masks: `(B, H_m, W_m, 2M)` muxed mask channels.
     /// - Returns: `(memory, posEnc)`, each `(B, H, W, D)`.
     func callAsFunction(_ features: MLXArray, masks: MLXArray) -> (memory: MLXArray, posEnc: MLXArray) {
-        fatalError("Task 13")
+        let fused = featureProjection(features) + maskDownsampler(masks)
+        let memory = memoryFuser(fused)
+        return (memory, positionEncoding(memory))
     }
 }
