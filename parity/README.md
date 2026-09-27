@@ -15,7 +15,7 @@ The checkpoint in `sam3.1-bf16` is stored as fp32. The first run also downloads 
 
 ```bash
 .venv/bin/python parity/dump.py --weights weights/sam3.1-bf16 \
-  --video clip.mp4 \
+  --video path/to/clip.mp4 \
   --out parity/fixtures
 ```
 

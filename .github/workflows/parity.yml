@@ -1,0 +1,48 @@
+name: Parity
+# Full parity run against mlx-vlm on a self-hosted Apple silicon Mac. Needs about 4 GB of weights,
+# 1 GB of fixtures, and a real GPU, so it runs on demand only.
+on:
+  workflow_dispatch:
+    inputs:
+      video:
+        description: Absolute path on the runner to the clip parity/dump.py samples (at least 10 frames)
+        required: true
+      weights_dir:
+        description: Where to keep the weights (reused between runs when complete)
+        required: false
+        default: weights/sam3.1-bf16
+jobs:
+  parity:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 120
+    env:
+      WEIGHTS: ${{ inputs.weights_dir }}
+      VIDEO: ${{ inputs.video }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          swift --version
+          swift -version 2>&1 | grep -Eq 'Swift version (6\.([2-9]|[1-9][0-9])|[7-9])\.' \
+            || { echo "::error::Swift 6.2 or later is required"; exit 1; }
+      - name: Download weights
+        run: scripts/run-cli.sh download --dir "$WEIGHTS"
+      - name: Python reference environment
+        run: |
+          set -euo pipefail
+          uv venv .venv --python 3.12
+          uv pip install --python .venv/bin/python -r parity/requirements.txt
+      - name: Dump fixtures
+        run: .venv/bin/python parity/dump.py --weights "$WEIGHTS" --video "$VIDEO" --out parity/fixtures
+      - name: Lint
+        run: swift format lint --recursive --strict Sources Tests
+      - name: Unit and parity tests
+        run: |
+          set -euo pipefail
+          case "$WEIGHTS" in /*) w="$WEIGHTS" ;; *) w="$PWD/$WEIGHTS" ;; esac
+          TEST_RUNNER_SAM31_WEIGHTS="$w" \
+          TEST_RUNNER_SAM31_FIXTURES="$PWD/parity/fixtures" \
+          TEST_RUNNER_SAM31_FULL_MODEL=1 \
+            xcodebuild test -scheme sam31-swift-Package -destination 'platform=macOS' \
+              -derivedDataPath .build/xcode -quiet
