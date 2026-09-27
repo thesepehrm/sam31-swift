@@ -6,7 +6,7 @@ Meta's SAM 3.1 in pure Swift on Apple silicon. Built on MLX, no Python.
 import SAM31
 
 let model = try await SAM31Model.load(from: URL(filePath: "weights/sam3.1-bf16"))
-let frame = try await model.encode(image)  // CGImage or CVPixelBuffer
+let frame = try await model.encode(image)  // CGImage, or .pixelBuffer(buffer)
 
 // Click: coordinates are in 1008×1008 model space (PointMapper converts from pixels).
 let clicked = try await model.segment(frame, prompt: .points([.init(x: 504, y: 380, label: .positive)]))
@@ -52,7 +52,8 @@ Add the package to `Package.swift`:
 Then add `.product(name: "SAM31", package: "sam31-swift")` to your target's dependencies. In Xcode,
 use File > Add Package Dependencies with the same URL.
 
-The only runtime dependency is [mlx-swift](https://github.com/ml-explore/mlx-swift).
+The only runtime dependency is [mlx-swift](https://github.com/ml-explore/mlx-swift), 0.31.x from 0.31.4
+(`.upToNextMinor(from: "0.31.4")`).
 
 ## Weights
 
@@ -83,8 +84,12 @@ points and boxes from source pixels, and `Detection.box` comes back in source pi
 
 ```swift
 let model = try await SAM31Model.load(from: weightsURL)  // dtype: .float32 by default
-let frame = try await model.encode(cgImage)              // or a 32BGRA / 420f / 420v CVPixelBuffer
+let frame = try await model.encode(cgImage)              // CGImage
+let video = try await model.encode(.pixelBuffer(buffer)) // 32BGRA / 420f / 420v CVPixelBuffer
 ```
+
+`CVPixelBuffer` is not `Sendable`, so under Swift 6 pass pixel buffers wrapped in `FrameInput`, as
+above. Don't write to the buffer until `encode` returns.
 
 `encode` runs the ViT backbone once. Keep the `FrameFeatures` while you prompt on that frame: clicks,
 text and tracking all reuse it, and each neck head is computed on first use and cached.
@@ -107,7 +112,10 @@ let mask = result.mask.upsampled(to: frame.sourceSize)  // BinaryMask, 0 or 255 
 let image = mask.cgImage()
 ```
 
-`SegmentResult` carries the mask logits (288×288), a predicted IoU `score` and an `objectScore`.
+`SegmentResult` carries the `mask`, a predicted IoU `score` and an `objectScore`. `Mask.values` holds
+the raw logits at model resolution (`width × height`, row-major; 288×288 for a click or box), where a
+logit above 0 is foreground. `Mask(logits:width:height:)` builds one from your own logits, for
+example to seed `TrackPrompt.mask`.
 
 ### Text detection
 

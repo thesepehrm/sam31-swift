@@ -15,6 +15,8 @@ mlx-vlm 0.7.3.
 
 - `SAM31Model` actor: load the SAM 3.1 checkpoint, encode a `CGImage` or `CVPixelBuffer`
   (`32BGRA`, `420f`, `420v`) once, and prompt on the cached `FrameFeatures`.
+  `encode(_: FrameInput)` accepts a pixel buffer wrapped in `FrameInput`, which Swift 6 callers
+  need because `CVPixelBuffer` is not `Sendable`.
 - Click, box, and box-plus-click segmentation, with iterative refinement from the previous result.
 - Text detection (`detect(_:text:scoreThreshold:)`) with boxes, scores, masks, and non-maximum
   suppression. Text embeddings for the 16 most recent phrases are cached.
@@ -24,8 +26,11 @@ mlx-vlm 0.7.3.
   cancellation and can resume from any frame.
 - `PointMapper` to convert between source pixels and the 1008×1008 model space.
 - `Mask`/`BinaryMask` results with bilinear upsampling to source size and `CGImage` export.
+  `Mask.values` exposes the raw logits, and `Mask(logits:width:height:)` builds a mask from your own
+  logits (for example for `TrackPrompt.mask`).
 - `WeightDownloader`: resumable Hugging Face download with progress, cancellation, and `HF_TOKEN`
-  support.
+  support. The token is not forwarded when the Hub redirects to another host.
+- Depends on mlx-swift 0.31.x from 0.31.4 (`.upToNextMinor(from: "0.31.4")`).
 - `sam31-cli` with `download`, `segment`, `detect`, `track`, and `bench` commands, plus
   `scripts/run-cli.sh` to supply the MLX metallib for SwiftPM builds.
 - Pure-Swift CLIP BPE tokenizer with the vocabulary bundled as a package resource.

@@ -13,8 +13,29 @@ against the Python reference first and against taste second.
 
 `weights/`, `parity/fixtures/` and `.venv/` are gitignored. Never commit them.
 
+`Package.swift` accepts mlx-swift 0.31.x from 0.31.4 (`.upToNextMinor(from: "0.31.4")`).
 `Package.resolved` is committed on purpose. It pins mlx-swift to the version the parity suite was
 run against, and CI builds that exact version. Update it in its own commit, after a full parity run.
+
+## Architecture
+
+The package is a 1:1 port of mlx-vlm's SAM 3.1 (`mlx_vlm/models/sam3` and `sam3_1`, mlx-vlm 0.7.3).
+Module and parameter names follow the Python code, so the checkpoint loads with the same weight keys
+after the same sanitize step. The modules in `Sources/SAM31/`:
+
+- `Vision/`: ViT backbone, position encodings, and the FPN neck (detection, interactive, and
+  propagation heads).
+- `Text/`: CLIP BPE tokenizer and text encoder.
+- `Detector/`: DETR encoder and decoder, geometry encoder, and segmentation head for text detection.
+- `Tracker/`: prompt encoder, mask decoder, memory encoder and attention, and the multiplex state
+  for multi-object tracking.
+- `Processing/`: Pillow-compatible preprocessing, mask ops, and NMS.
+- `Config/`: the model configuration, decoded from `config.json`.
+- `Loading/`: weight loading, key remapping (sanitize), and the Hub downloader.
+- `API/`: the public surface (`SAM31Model`, `TrackingSession`, prompts, and results).
+
+`parity/dump.py` runs mlx-vlm with hooks and saves intermediate tensors as fixtures. The suites in
+`Tests/SAM31Tests/Parity/` compare the Swift modules against them, layer by layer and end to end.
 
 ## Build and test
 

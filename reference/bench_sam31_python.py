@@ -1,4 +1,4 @@
-import time, sys
+import os, time, sys
 import numpy as np, mlx.core as mx, cv2
 from PIL import Image
 from mlx_vlm.utils import load_model
@@ -6,9 +6,13 @@ from mlx_vlm.models.sam3_1.processing_sam3_1 import Sam31Processor
 from mlx_vlm.models.sam3.generate import Sam3Predictor
 from mlx_vlm.models.sam3_1.generate import _get_backbone_features
 
-MP = "./sam3.1-bf16"
-VIDEO = "clip.mp4"
+# Usage: bench_sam31_python.py [N_FRAMES] [VIDEO]
+# VIDEO falls back to $SAM31_VIDEO; weights come from $SAM31_WEIGHTS (default weights/sam3.1-bf16).
+MP = os.environ.get("SAM31_WEIGHTS", "weights/sam3.1-bf16")
 N_FRAMES = int(sys.argv[1]) if len(sys.argv) > 1 else 120
+VIDEO = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("SAM31_VIDEO")
+if not VIDEO:
+    sys.exit("usage: bench_sam31_python.py [N_FRAMES] VIDEO  (or set SAM31_VIDEO)")
 
 def T(label, fn, *a, **k):
     t = time.perf_counter(); r = fn(*a, **k); dt = (time.perf_counter() - t) * 1000

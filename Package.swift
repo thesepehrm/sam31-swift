@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "sam31-cli", targets: ["sam31-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.4"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.31.4")),
     ],
     targets: [
         .target(

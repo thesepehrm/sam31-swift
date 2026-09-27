@@ -3,7 +3,7 @@
 Both sides run the same fp32 checkpoint (`weights/sam3.1-bf16/model.safetensors` holds fp32
 tensors) on the same 1080p clip, 120 frames:
 
-- Python: `.venv/bin/python reference/bench_sam31_python.py 120` (mlx 0.32.2, mlx-vlm 0.7.3)
+- Python: `SAM31_WEIGHTS=weights/sam3.1-bf16 .venv/bin/python reference/bench_sam31_python.py 120 clip.mp4` (mlx 0.32.2, mlx-vlm 0.7.3)
 - Swift: `scripts/run-cli.sh bench --weights weights/sam3.1-bf16 --video clip.mp4 --frames 120`
   (mlx-swift 0.31.4, release build)
 
