@@ -61,27 +61,32 @@ import Testing
         #expect(propagation.outputHypernetworksMlps.count == 3)
     }
 
-    /// Decoder-level check with the frame features rebuilt the way tracker.py does for an init
-    /// conditioning frame: `prepare_frame_features` (conv_s0/conv_s1 on the interactive FPN) and
-    /// `_get_interactive_pix_mem` (add `interactivity_no_mem_embed`).
-    @Test func interactiveMaskDecoderMatchesPython() throws {
-        let pe = try Self.loadedPromptEncoder()
-        let dec = MultiplexMaskDecoder(Self.tcfg.interactiveMaskDecoderConfig)
-        try loadWeights(
-            into: dec, weights: SharedWeights.all, dtype: .float32,
-            prefix: "tracker_model.interactive_sam_mask_decoder.")
+    /// The whole tracker loaded from the checkpoint (verify `.all`), and the frame features that
+    /// `Model.tracker_frame_features` builds for image A.
+    static func trackerAndFeatures() throws -> (MultiplexTrackerModel, TrackerFrameFeatures) {
+        let trk = MultiplexTrackerModel(tcfg)
+        try loadWeights(into: trk, weights: SharedWeights.all, dtype: .float32, prefix: "tracker_model.")
         let vx = try Fixtures.load("vision.safetensors")
+        let ff = trk.prepareFrameFeatures(
+            interactiveFPN: (0..<3).map { vx["neck.interactive.\($0)"]! },
+            propagationFPN: (0..<3).map { vx["neck.propagation.\($0)"]! })
+        return (trk, ff)
+    }
+
+    /// Decoder-level check on the frame features of `prepareFrameFeatures` and
+    /// `getInteractivePixMem`, as tracker.py builds them for an init conditioning frame.
+    @Test func interactiveMaskDecoderMatchesPython() throws {
+        let (trk, ff) = try Self.trackerAndFeatures()
+        let pe = trk.interactiveSamPromptEncoder
         let ix = try Fixtures.load("interactive.safetensors")
-        let noMem = SharedWeights.all["tracker_model.interactivity_no_mem_embed"]!
-        let feat = vx["neck.interactive.2"]!
-        let pix = (feat + noMem).reshaped(1, feat.dim(1) * feat.dim(2), feat.dim(3))
-        let highRes = [dec.convS0(vx["neck.interactive.0"]!), dec.convS1(vx["neck.interactive.1"]!)]
+        let inter = ff.interactive!
+        let pix = trk.getInteractivePixMem(inter.visionFeat)
         for (tag, points, labels) in Self.cases {
             let (sparse, dense) = Self.encode(pe, points: points, labels: labels)
             // tracker.py::_use_multimask: multimask only for a single point on an init frame.
-            let out = dec(
+            let out = trk.interactiveSamMaskDecoder(
                 imageEmbeddings: pix, imagePE: pe.getDensePE(), multimaskOutput: labels.count == 1,
-                highResFeatures: highRes, sparsePromptEmbeddings: sparse, densePromptEmbeddings: dense)
+                highResFeatures: inter.highRes, sparsePromptEmbeddings: sparse, densePromptEmbeddings: dense)
             assertClose(out.masks, ix["\(tag).sam.decoder.masks"]!, "\(tag).masks")
             assertClose(out.iouPred, ix["\(tag).sam.decoder.iou_pred"]!, "\(tag).iou_pred")
             assertClose(out.samTokensOut, ix["\(tag).sam.decoder.sam_tokens_out"]!, "\(tag).sam_tokens_out")
@@ -89,5 +94,52 @@ import Testing
                 out.objectScoreLogits, ix["\(tag).sam.decoder.object_score_logits"]!,
                 "\(tag).object_score_logits")
         }
+    }
+
+    /// `track_step` on a fresh 1-object state, init conditioning frame, points only.
+    ///
+    /// `runMemEncoder: false`: the memory encoder's forward pass lands in Task 13. It only adds
+    /// `maskmem_*` to the output and does not affect the tensors asserted here.
+    @Test(arguments: ["click1", "click2", "box"])
+    func interactiveStepMatchesPython(_ tag: String) throws {
+        let (trk, ff) = try Self.trackerAndFeatures()
+        let ix = try Fixtures.load("interactive.safetensors")
+        let (_, points, labels) = Self.cases.first { $0.tag == tag }!
+        let st = trk.initState(numObjects: 1, objectIDs: nil)
+        let out = trk.trackStep(
+            st, frameIndex: 0, isInitCondFrame: true, features: ff,
+            pointInputs: PointInputs(
+                coords: MLXArray(points).reshaped(1, -1, 2), labels: MLXArray(labels).reshaped(1, -1)),
+            maskInputs: nil, numFrames: 10, runMemEncoder: false)
+        // The brief allowed atol 1e-3 on pred_masks; the default fp32 tolerance holds (max |Δ| 2.1e-5).
+        assertClose(out.predMasks, ix["\(tag).out.pred_masks"]!, "\(tag).pred_masks")
+        assertClose(out.predMasksHighRes, ix["\(tag).out.pred_masks_high_res"]!, "\(tag).pred_masks_high_res")
+        assertClose(
+            out.objectScoreLogits, ix["\(tag).out.object_score_logits"]!, "\(tag).object_score_logits")
+        assertClose(out.objPtr!, ix["\(tag).out.obj_ptr"]!, "\(tag).obj_ptr")
+        #expect(maskIoU(out.predMasksHighRes, ix["\(tag).out.pred_masks_high_res"]!) >= 0.99)
+        #expect(st.condFrameOutputs[0] === out)
+        #expect(out.conditioningObjects == [0])
+    }
+
+    /// `track_step` with a mask prompt on a fresh 1-object state (mask-as-output mode), which also
+    /// exercises the mask-prompt pre-step of `_forward_sam_heads`. Fixture: `mask_prompt.out.*`.
+    /// `expandedDimensions` rather than `[.newAxis, .newAxis]`: mlx-swift 0.31.4 drops the new axes
+    /// when the index count equals the array's rank.
+    @Test func maskPromptStepMatchesPython() throws {
+        let (trk, ff) = try Self.trackerAndFeatures()
+        let tx = try Fixtures.load("track.safetensors")
+        let st = trk.initState(numObjects: 1, objectIDs: nil)
+        let out = trk.trackStep(
+            st, frameIndex: 0, isInitCondFrame: true, features: ff, pointInputs: nil,
+            maskInputs: expandedDimensions(tx["add_mask"]!, axes: [0, 1]), numFrames: 10, runMemEncoder: false
+        )
+        assertClose(out.predMasks, tx["mask_prompt.out.pred_masks"]!, "mask_prompt.pred_masks")
+        assertClose(out.predMasksHighRes, tx["mask_prompt.out.pred_masks_high_res"]!, "mask_prompt.high_res")
+        assertClose(
+            out.objectScoreLogits, tx["mask_prompt.out.object_score_logits"]!,
+            "mask_prompt.object_score_logits")
+        assertClose(out.objPtr!, tx["mask_prompt.out.obj_ptr"]!, "mask_prompt.obj_ptr")
+        #expect(out.conditioningObjects == [0])
     }
 }
