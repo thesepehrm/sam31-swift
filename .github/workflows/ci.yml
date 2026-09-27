@@ -2,14 +2,27 @@ name: CI
 on: [push, pull_request]
 jobs:
   build-test:
-    runs-on: macos-15
+    # mlx-swift 0.31.4 and this package need Swift 6.2+ (Xcode 26). macos-15 with Xcode 16.4 has
+    # Swift 6.1 and cannot build them. The macos-26 image (Apple silicon) ships Xcode 26.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app || true
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          xcode=$(find /Applications -maxdepth 1 -name "Xcode_26*.app" | sort -V | tail -n 1)
+          [ -n "$xcode" ] || { echo "::error::no Xcode 26 on this runner"; exit 1; }
+          sudo xcode-select -s "$xcode"
+          swift --version
+          swift -version 2>&1 | grep -Eq 'Swift version (6\.([2-9]|[1-9][0-9])|[7-9])\.' \
+            || { echo "::error::Swift 6.2 or later is required"; exit 1; }
       - name: Lint
         run: swift format lint --recursive --strict Sources Tests
       - name: Build CLI
         run: swift build -c release --product sam31-cli
-      - name: Unit tests (parity tests self-disable without weights)
+      # These tests run MLX on the GPU. GitHub-hosted macOS runners are virtual machines, and their
+      # Metal device may be missing or limited, so a failure here can come from the runner rather than
+      # the change. Parity tests disable themselves without weights; the full parity run is in
+      # parity.yml on a self-hosted machine.
+      - name: Unit tests
         run: xcodebuild test -scheme sam31-swift-Package -destination 'platform=macOS' -derivedDataPath .build/xcode -quiet
