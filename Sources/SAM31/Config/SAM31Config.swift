@@ -748,3 +748,17 @@ struct ModelConfig: Codable, Sendable {
         }
     }
 }
+
+extension TrackerConfig {
+    /// Config of `interactive_sam_mask_decoder`, built as `MultiplexTrackerModel.__init__` builds
+    /// `interactive_cfg`: the mask-decoder config with one slot, the tracker's multimask count, a
+    /// single-mask token, and no dynamic stability fallback.
+    var interactiveMaskDecoderConfig: TrackerMaskDecoderConfig {
+        var c = maskDecoderConfig
+        c.multiplexCount = 1
+        c.numMultimaskOutputs = numMultimaskOutputs
+        c.multimaskOutputsOnly = false
+        c.dynamicMultimaskViaStability = false
+        return c
+    }
+}
