@@ -80,10 +80,10 @@ ESC:\x1b[31mred\x1b[0m
 ESC:null\x00\x00nulls
 ESC:carriage\rreturn
 RAW:  leading spaces
-RAW:trailing spaces  
-RAW:   both sides   
-RAW: 
-RAW:   
+ESC:trailing spaces\x20\x20
+ESC:   both sides\x20\x20\x20
+ESC:\x20
+ESC:\x20\x20\x20
 RAW:
 RAW:a  b   c    d
 a red car

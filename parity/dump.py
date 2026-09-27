@@ -218,15 +218,18 @@ def main():
 
     # ---- tracking: obj0 by click2 on f0, obj1 by add_mask_prompt on f0, propagate 1..4,
     #      refine obj0 on f5 with a positive click, propagate 6..9 ----
-    # mem.encoder.first = first memory-encoder call = frame 0 click2 track_step (1 object, before add_mask).
+    # num_frames (ruling R8): every tracking call passes num_frames=10 explicitly. Model.track_step is
+    # not used because it calls propagate with num_frames=None (-> frame_idx+1), which changes
+    # _get_tpos_enc's max_abs_pos.
+    # mem.encoder.first = first memory-encoder call = frame 0 click2 track_step (1 object, before add_mask),
+    # the raw MultiplexMemoryEncoder output (before _encode_new_memory adds no_obj_embed_spatial).
+    # The hook stays on for the whole stage so hook_calls records the total count.
     hook(trk.memory_encoder, "mem.encoder", lambda o: {"features": o[0], "pos_enc": o[1]})
     st = trk.init_state(1)
     trk.track_step(st, frame_idx=0, is_init_cond_frame=True, frame_features=ff,
                    point_inputs={"point_coords": mx.array([cases["click2"][0]], dtype=mx.float32),
                                  "point_labels": mx.array([cases["click2"][1]], dtype=mx.int32)}, num_frames=10)
     first_mem = {k: v for k, v in CAP["mem.encoder"][0].items()}
-    unhook_all()
-    CAP.clear()
     tr = {"mem.encoder.first": first_mem}
     # Second object (ruling R7): a detection mask only if "person" gives >= 2 hits; otherwise the
     # interactive mask of a single positive click at the `neg` point, from a separate 1-object state
@@ -255,13 +258,13 @@ def main():
         pv = mx.array(proc.preprocess_image(Image.fromarray(frames[i]))["pixel_values"])
         b = _get_backbone_features(model, pv)
         if i == 5:
-            ffi = model.tracker_frame_features(b)
+            ffi = model.tracker_frame_features(b)  # interactive + propagation (refine needs both)
             # Refine (ruling R6): propagate f5 normally first (recorded as f5.pre_refine.*), then call
             # track_step again on f5 in propagation_and_interaction mode: objects_to_interact=[0], a
             # positive click at prompts.refine, NO prev_sam_mask_logits. Memory attention only reads
             # frames < 5, so the stored f5 output does not feed the second call; the refine output
             # replaces state.non_cond_frame_outputs[5]. It is recorded as f5.masks / f5.object_score_logits.
-            prev = model.track_step(st, b, i)
+            prev = trk.propagate(st, 5, ffi, num_frames=10)
             tr["f5.pre_refine.masks"] = prev["pred_masks_high_res"]
             tr["f5.pre_refine.object_score_logits"] = prev["object_score_logits"]
             mx.eval(prev["pred_masks_high_res"], prev["object_score_logits"])
@@ -271,12 +274,14 @@ def main():
                                              "point_labels": mx.array([[1]], dtype=mx.int32)},
                                objects_to_interact=[0], num_frames=10)
         else:
-            o = model.track_step(st, b, i)
+            o = trk.propagate(st, i, model.tracker_frame_features(b, need_interactive=False), num_frames=10)
         tr[f"f{i}.masks"] = o["pred_masks_high_res"]
         tr[f"f{i}.object_score_logits"] = o["object_score_logits"]
         mx.eval(tr[f"f{i}.masks"], tr[f"f{i}.object_score_logits"])
         sanity["track"][f"f{i}"] = [round(coverage(m), 4) for m in o["pred_masks_high_res"]]
-    save(out / "track.safetensors", tr, manifest)
+    mem_calls = len(CAP.get("mem.encoder", []))
+    unhook_all()
+    save(out / "track.safetensors", tr, manifest, {"mem.encoder": mem_calls})
 
     manifest["sanity"] = sanity
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1))

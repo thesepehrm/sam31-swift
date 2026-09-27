@@ -46,6 +46,12 @@ Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coo
 | `track.safetensors`       | `mem.encoder.first.{features,pos_enc}`, `add_mask`, `f0.*`, `f1..f9.{masks,object_score_logits}`, `f5.pre_refine.{masks,object_score_logits}`                                                                                        |
 | `manifest.json`           | `mlx_vlm` version, `video`, `prompts`, `add_mask_source`, `hook_calls`, `tokenizer_entries`, `sanity`, `files`                                                                                                                       |
 
+### Notes on specific keys
+
+- `mem.encoder.first.features` is the raw `MultiplexMemoryEncoder` output. It is taken **before** `_encode_new_memory` adds `no_obj_embed_spatial`.
+- DETR consumes only `neck.det_pos.2`, flattened to (1, 5184, 256). The other two scales are dumped for the pos-encoding unit test only.
+- `final.boxes` are in source pixels (1920×1080), clipped to [0, max(H, W)]. Swift tests compare them with a tolerance of 1 px × W/1008 (the 1 px gate in 1008 space).
+
 ### Prompts (`manifest.prompts`)
 
 - `pos` is the centre of detection 0's box. `neg` is (302.4, 302.4).
@@ -60,6 +66,17 @@ Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coo
 
 ### Tracking scenario (the Swift test must replay it exactly)
 
+Every tracking call passes `num_frames=10` (ruling R8). `_get_tpos_enc` depends on it through `max_abs_pos = min(num_frames, 16)`. The dump never uses `Model.track_step`, because that passes `num_frames=None`, which becomes `frame_idx + 1`.
+
+| Call | num_frames |
+|---|---|
+| f0 click2 `track_step` | 10 |
+| obj2 click `track_step` (separate state) | 10 |
+| f0 `add_mask_prompt` | n/a (merge path; no memory attention) |
+| f1–f4, f6–f9 `tracker.propagate` | 10 |
+| f5 `tracker.propagate` (pre-refine) | 10 |
+| f5 refine `tracker.track_step` | 10 |
+
 1. `st = init_state(1)`. Run `track_step` on f0 with `is_init_cond_frame=True` and the click2 points.
    - `mem.encoder.first` records the memory encoder of this step (1 object).
 2. Build the second object's mask (ruling R7):
@@ -67,9 +84,9 @@ Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coo
    - Otherwise, use a separate 1-object state with one positive click at `prompts.obj2` on f0. Take `add_mask = (pred_masks_high_res[0,0] > 0)` as float32 1008×1008.
    - `manifest.add_mask_source` says which path ran. Currently it is the click path, because there is 1 detection.
 3. `add_mask_prompt(st, 0, ff0, add_mask[None])`. f0 is already tracked, so the mask is merged as object 1. Its output is `f0.*`.
-4. Propagate frames 1–4 with `Model.track_step`, which builds frame features with `need_interactive=False`.
+4. Propagate frames 1–4 with `tracker.propagate(st, i, model.tracker_frame_features(bb, need_interactive=False), num_frames=10)`.
 5. On f5, build full frame features (interactive and propagation):
-   - Propagate normally and record the result as `f5.pre_refine.*`.
+   - Run `tracker.propagate(st, 5, ffi, num_frames=10)` with those full features and record the result as `f5.pre_refine.*`.
    - Refine (ruling R6): call `tracker.track_step` again on f5 with `is_init_cond_frame=False`, `point_inputs=[[refine]]` with label [[1]], `objects_to_interact=[0]`, `num_frames=10`, and **no** `prev_sam_mask_logits`. This is the `propagation_and_interaction` mode.
    - The second call does not raise, so nothing is popped from the state. Memory attention reads only frames before 5, so the stored pre-refine output does not affect it.
    - The refine output replaces `non_cond_frame_outputs[5]` and is recorded as `f5.*`.
@@ -83,6 +100,8 @@ Shapes and dtypes for every key are listed in `manifest.json` under `files`. Coo
 - `add_mask` now comes from a click, not the plan's synthetic square (ruling R7).
 - The memory-encoder key names changed: `mem.encoder.first.0` became `mem.encoder.first.features`, and `mem.encoder.first.1` became `mem.encoder.first.pos_enc`.
 - New keys: `f0.masks`, `f0.object_score_logits`, `f5.pre_refine.object_score_logits`.
-- Hooks are removed after each stage, and each stage keeps the first call. `manifest.hook_calls` shows that every hooked module ran exactly once per stage.
+- Hooks are removed after each stage, and each stage keeps the first call. `manifest.hook_calls` shows that every hooked module in the vision, detect and interactive stages ran exactly once per stage. In the track stage the memory-encoder hook stays on for the whole stage and runs 13 times: f0 click2, the obj2 click, the add_mask re-encode, f1–f4, f5 pre-refine, f5 refine and f6–f9. The fixture keeps the first call.
 - `flat()` skips `None`, casts float64 to float32 and bool to uint8, and raises on unknown types.
+- Tracking uses `tracker.propagate(..., num_frames=10)` instead of `Model.track_step` (ruling R8).
+- Corpus lines with trailing whitespace are written with `ESC:` and `\x20` so formatters cannot strip them. The resulting texts are unchanged.
 - Box prompt coordinates are passed as Python floats, because `mx.array` rejects `np.float32` scalars.
