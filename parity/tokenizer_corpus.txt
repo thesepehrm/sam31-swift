@@ -1,0 +1,227 @@
+person
+the dancer
+city skyline
+object
+The DANCER
+PERSON
+Person
+a dog!!! ...?
+what?!?!
+hello, world.
+end...
+(parenthesized) [bracketed] {braced}
+"quoted text"
+'single quoted'
+semi;colon:separated
+hyphen-ated words
+under_score_word
+slash/separated/path
+email@example.com
+https://example.com/path?x=1&y=2
+#hashtag @mention
+$100 & 50%
+a+b=c
+it's
+we'll
+they'd
+I'm
+you're
+she's
+don't
+can't
+won't
+isn't
+the cat's toy
+o'clock
+rock 'n' roll
+3 cats
+1080p
+4k video
+2026
+3.14159
+1,000,000
+42nd street
+h264
+mp4 file
+v2.0.1
+café
+naïve
+résumé
+jalapeño
+über
+façade
+Zürich
+São Paulo
+Ελληνικά
+русский текст
+猫
+東京タワー
+中文字符
+한국어
+こんにちは
+مرحبا
+שלום
+हिन्दी
+🐶 dog
+🐱 cat
+😀😀😀
+👨‍👩‍👧 family
+🇺🇸 flag
+❤️ heart
+ESC:a\tb
+ESC:tab\tseparated\twords
+ESC:line one\nline two
+ESC:\n\nleading newlines
+ESC:trailing newline\n
+ESC:mixed \t\n whitespace
+ESC:a\x00b
+ESC:bell\x07char
+ESC:\x1b[31mred\x1b[0m
+ESC:null\x00\x00nulls
+ESC:carriage\rreturn
+RAW:  leading spaces
+RAW:trailing spaces  
+RAW:   both sides   
+RAW: 
+RAW:   
+RAW:
+RAW:a  b   c    d
+a red car
+a blue bicycle
+the person on the left
+the man in the red shirt
+a woman holding an umbrella
+two children playing
+a black and white cat
+the tall building
+a tree
+the sky
+water
+a boat on the river
+a white car parked
+the traffic light
+a street sign
+the moon
+a laptop computer
+a cup of coffee
+the kitchen table
+a wooden chair
+the red apple
+a bowl of fruit
+a pair of shoes
+the guitar player
+a microphone stand
+the drummer
+a crowd of people
+the stage lights
+a basketball
+a soccer ball
+the goalkeeper
+a horse
+a flock of birds
+the airplane
+a helicopter
+the train
+a bus
+a motorcycle
+the bridge
+a mountain
+the ocean waves
+a surfboard
+the beach umbrella
+a sandcastle
+a snowman
+the fireplace
+a candle
+a book
+the bookshelf
+a painting
+the television
+a remote control
+the sofa
+a pillow
+a lamp
+the window
+a door
+the staircase
+a dog running
+a cat sleeping
+a bird flying
+a fish swimming
+the hand
+a face
+the left eye
+long hair
+a hat
+sunglasses
+a backpack
+a handbag
+a phone
+headphones
+a watch
+a necklace
+a tie
+a jacket
+jeans
+a dress
+a skirt
+a scarf
+gloves
+boots
+a bicycle helmet
+the skateboarder
+a skateboard
+the dancer in white
+the dancer on the right
+the lead singer
+a musician
+the audience
+a spotlight
+smoke
+fire
+a flag
+the logo
+text on the sign
+a license plate
+a steering wheel
+the dashboard
+the rear view mirror
+a tire
+the road
+the sidewalk
+a crosswalk
+a pedestrian
+the cyclist
+a parking meter
+a fire hydrant
+a mailbox
+a bench
+a trash can
+the fountain
+a statue
+the tower
+the dome
+a castle
+the palace
+a temple
+a church
+the lighthouse
+the harbor
+a ship
+the dock
+fishing nets
+a lobster
+seagulls
+the pier
+a ferris wheel
+a roller coaster
+a carousel
+balloons
+fireworks
+UPPER lower MiXeD CaSe
+ALLCAPSWORD
+supercalifragilisticexpialidocious
+antidisestablishmentarianism
+pneumonoultramicroscopicsilicovolcanoconiosis
+the quick brown fox jumps over the lazy dog while the slow green turtle crawls under the tall wooden fence near the old red barn on the farm at the edge of the quiet village where many people live and work every single day of the year without ever stopping to rest or look around at the beautiful scenery surrounding them
+one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six twenty-seven twenty-eight twenty-nine thirty

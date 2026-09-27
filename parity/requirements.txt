@@ -1,0 +1,4 @@
+mlx-vlm==0.7.3
+opencv-python-headless
+pillow
+numpy
