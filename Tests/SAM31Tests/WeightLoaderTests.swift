@@ -114,8 +114,13 @@ private final class Tree: Module {
 
     @Test func rootHasDetectorAndTrackerSubtrees() {
         let root = SAM31Root(ModelConfig())
-        #expect(root.parameters().flattened().isEmpty)
         let names = Set(root.children().keys)
         #expect(names == ["detector_model", "tracker_model"])
+        let detectorChildren = Set(root.detectorModel.children().keys)
+        #expect(
+            detectorChildren == [
+                "vision_encoder", "text_encoder", "text_projection", "detr_encoder", "detr_decoder",
+                "geometry_encoder", "mask_decoder", "dot_product_scoring",
+            ])
     }
 }
