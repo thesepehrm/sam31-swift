@@ -2,7 +2,6 @@
 // DecoupledMemoryAttention} (mlx-vlm 0.7.3)
 import Foundation
 import MLX
-import MLXFast
 import MLXNN
 
 /// RoPE attention without Q/K/V projections (the caller applies them): 2D rotary encoding plus
@@ -63,7 +62,8 @@ final class SimpleRoPEAttention {
         k = k.transposed(0, 2, 1, 3)
         v = v.transposed(0, 2, 1, 3)
 
-        let out = MLXFast.scaledDotProductAttention(queries: q, keys: k, values: v, scale: scale, mask: nil)
+        // Python calls mx.fast.scaled_dot_product_attention; see `fusedAttention` for the padding.
+        let out = fusedAttention(queries: q, keys: k, values: v, scale: scale)
         return out.transposed(0, 2, 1, 3).reshaped(b, nQ, -1)
     }
 }
