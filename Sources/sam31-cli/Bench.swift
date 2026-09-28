@@ -119,3 +119,44 @@ func runBench(_ options: Options) async throws {
     printTrackSummary(perFrame, totalSeconds: totalSeconds)
     print("peak MLX memory GB: \(String(format: "%.2f", Double(Memory.peakMemory) / 1e9))")
 }
+
+/// Times `Mask.upsampled(to:)` from a square logit grid to `width × height`, the call an app makes
+/// once per click to draw the mask. Needs no weights: the logits are a seeded blob plus noise, so the
+/// mask has real edges.
+func runBenchUpsample(_ options: Options) throws {
+    let side = try options.int("mask-size") ?? 288
+    let width = try options.int("width") ?? 1920
+    let height = try options.int("height") ?? 1080
+    let runs = try options.int("runs") ?? 20
+
+    var state: UInt64 = 0x5A31
+    func noise() -> Float {
+        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return Float(state >> 40) / Float(1 << 24) * 6 - 3
+    }
+    let center = Float(side) / 2
+    let logits = (0..<(side * side)).map { i -> Float in
+        let x = Float(i % side) - center
+        let y = Float(i / side) - center
+        return 40 - (x * x + y * y) / 200 + noise()
+    }
+    let mask = try Mask(logits: logits, width: side, height: side)
+    let size = CGSize(width: width, height: height)
+
+    let coverage = mask.upsampled(to: size).coverage  // also warms up
+    var times: [Double] = []
+    for _ in 0..<runs {
+        let start = ContinuousClock.now
+        let binary = mask.upsampled(to: size)
+        times.append(elapsedMS(since: start))
+        precondition(binary.bytes.count == width * height)
+    }
+    times.sort()
+    print(
+        "upsample \(side)x\(side) -> \(width)x\(height), \(runs) runs, coverage \(String(format: "%.3f", coverage))"
+    )
+    print(
+        String(
+            format: "  min %.2f ms, median %.2f ms, max %.2f ms", times[0], times[times.count / 2],
+            times[times.count - 1]))
+}

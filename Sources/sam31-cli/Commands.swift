@@ -36,6 +36,8 @@ let usage = """
           writes one mask PNG per tracked frame.
       bench --weights D --video V [--frames 120] [--out-dir O]
           Mirror reference/bench_sam31_python.py step for step and print its timings.
+      bench-upsample [--mask-size 288] [--width 1920] [--height 1080] [--runs 20]
+          Time Mask.upsampled(to:) on random logits. Needs no weights.
 
     common options:
       --dtype float32|bfloat16   model precision (default float32)

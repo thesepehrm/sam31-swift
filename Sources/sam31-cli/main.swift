@@ -26,6 +26,8 @@ func run(_ arguments: [String]) async -> Int32 {
             try await runTrack(Options(rest, allowed: common.union(["video", "point", "frames", "out-dir"])))
         case "bench":
             try await runBench(Options(rest, allowed: common.union(["video", "frames", "out-dir"])))
+        case "bench-upsample":
+            try runBenchUpsample(Options(rest, allowed: ["mask-size", "width", "height", "runs"]))
         default:
             throw UsageError("unknown command '\(command)'")
         }
