@@ -54,7 +54,8 @@ public struct Mask: Sendable {
     /// the tracker's own 288→1008 upsample), then keeps pixels whose logit is above `threshold`.
     /// mlx-vlm's `_masks_to_detection` resizes the thresholded mask with nearest instead; bilinear on
     /// logits gives smoother edges, and the parity tests compare at model resolution, so the
-    /// difference does not affect them. Runs on the CPU, so it never touches the model's GPU work.
+    /// difference does not affect them. Runs on the CPU with Accelerate, so it never touches the
+    /// model's GPU work: a 288×288 mask to 1920×1080 takes a few milliseconds.
     ///
     /// - Returns: the binary mask, or an empty (0×0) mask when `size` is not a positive finite size.
     public func upsampled(to size: CGSize, threshold: Float = 0) -> BinaryMask {
@@ -63,37 +64,8 @@ public struct Mask: Sendable {
         else { return BinaryMask(width: 0, height: 0, bytes: []) }
         let outW = Int(size.width.rounded())
         let outH = Int(size.height.rounded())
-        let tx = atenBilinearTaps(inSize: width, outSize: outW, alignCorners: false, antialias: false)
-        let ty = atenBilinearTaps(inSize: height, outSize: outH, alignCorners: false, antialias: false)
-
-        // Width pass, then height pass, accumulating taps in order (as `separableInterpolate`).
-        var rows = [Float](repeating: 0, count: height * outW)
-        for y in 0..<height {
-            let src = y * width
-            let dst = y * outW
-            for t in tx.indices.indices {
-                let (idx, wt) = (tx.indices[t], tx.weights[t])
-                for x in 0..<outW {
-                    rows[dst + x] += values[src + Int(idx[x])] * wt[x]
-                }
-            }
-        }
-        var bytes = [UInt8](repeating: 0, count: outH * outW)
-        var column = [Float](repeating: 0, count: outW)
-        for y in 0..<outH {
-            for x in 0..<outW { column[x] = 0 }
-            for t in ty.indices.indices {
-                let src = Int(ty.indices[t][y]) * outW
-                let wt = ty.weights[t][y]
-                for x in 0..<outW {
-                    column[x] += rows[src + x] * wt
-                }
-            }
-            let dst = y * outW
-            for x in 0..<outW where column[x] > threshold {
-                bytes[dst + x] = 255
-            }
-        }
+        let bytes = upsampleBinary(
+            values, width: width, height: height, toWidth: outW, height: outH, threshold: threshold)
         return BinaryMask(width: outW, height: outH, bytes: bytes)
     }
 }
