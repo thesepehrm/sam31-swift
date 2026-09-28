@@ -29,7 +29,7 @@ Against Python mlx-vlm on the same checkpoint and 1080p clip (M4 Pro): tracking 
 frame instead of 2.9-3.3 s, and peak memory is 5.9 GB instead of 11.8 GB.
 
 ```bash
-swift package add-dependency https://github.com/thesepehrm/sam31-swift --from 0.1.0
+swift package add-dependency https://github.com/thesepehrm/sam31-swift --from 0.1.1
 hf download mlx-community/sam3.1-bf16 --local-dir weights/sam3.1-bf16
 ```
 
@@ -47,7 +47,7 @@ hf download mlx-community/sam3.1-bf16 --local-dir weights/sam3.1-bf16
 Add the package to `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/thesepehrm/sam31-swift", from: "0.1.0"),
+.package(url: "https://github.com/thesepehrm/sam31-swift", from: "0.1.1"),
 ```
 
 Then add `.product(name: "SAM31", package: "sam31-swift")` to your target's dependencies. In Xcode,
@@ -173,6 +173,7 @@ scripts/run-cli.sh segment --weights weights/sam3.1-bf16 --image photo.jpg --poi
 scripts/run-cli.sh detect  --weights weights/sam3.1-bf16 --image photo.jpg --text person --out-dir out
 scripts/run-cli.sh track   --weights weights/sam3.1-bf16 --video clip.mp4 --point 1220,750 --frames 60 --out-dir out
 scripts/run-cli.sh bench   --weights weights/sam3.1-bf16 --video clip.mp4 --frames 120
+scripts/run-cli.sh bench-upsample --width 1920 --height 1080
 ```
 
 CLI coordinates are source pixels. Add `,0` to a point for a negative click. `--help` lists every
@@ -207,7 +208,9 @@ Two alternating runs per side. Lower is better.
 The ViT backbone is about half of every frame on both sides, and it is the same MLX graph. Swift wins
 on tracking mostly because memory attention runs on MLX's fused attention kernel (about 520 ms per
 frame instead of 1060 ms), which also halves peak memory. The machine was not idle, so absolute times
-drift 10-20% between sessions. [docs/perf.md](docs/perf.md) has the raw output, the optimizations
+drift 10-20% between sessions. The click rows time `segment` only. Drawing the result with
+`mask.upsampled(to:)` at 1920×1080 adds about 1 ms in a release build and 4 ms in a Debug build
+(`bench-upsample`). [docs/perf.md](docs/perf.md) has the raw output, the optimizations
 tried, and the stage profile.
 
 ## How parity is verified

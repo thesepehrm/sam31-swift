@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-28
+
+### Performance
+
+- `Mask.upsampled(to:threshold:)` runs on Accelerate (vDSP) instead of a scalar loop. A 288×288
+  mask to 1920×1080 on an M4 Pro: 820-1603 ms to 3.8 ms in a Debug build, 3.5-4.2 ms to 0.9-1.3 ms
+  in release. The output bytes are identical to 0.1.0's: every product and sum is still rounded on
+  its own (no fused multiply-add), in the same order, and `MaskUpsampleParityTests` checks that
+  against the old loop on random logits at 15 sizes, including downsamples and 1-pixel edges.
+
+### Added
+
+- `sam31-cli bench-upsample` times `Mask.upsampled(to:)` on random logits. It needs no weights.
+
 ## [0.1.0] - 2026-09-28
 
 First public release: a Swift/MLX port of Meta's SAM 3.1, verified layer by layer against
@@ -53,5 +67,6 @@ Measured against mlx-vlm 0.7.3 on an M4 Pro (24 GB), fp32, 1080p clip, 120 frame
 - Objects added or refined mid-video leave tracker memory after about 16 frames, as in mlx-vlm.
 - No box-guided text detection in the public API.
 
-[Unreleased]: https://github.com/thesepehrm/sam31-swift/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/thesepehrm/sam31-swift/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/thesepehrm/sam31-swift/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/thesepehrm/sam31-swift/releases/tag/v0.1.0
